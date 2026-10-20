@@ -16,9 +16,10 @@
 | **Supply Chain / Dependencies (`npm audit`)** | **0 Known CVEs** across all 93 production & dev packages | 🟢 **PASS** |
 | **Transport Security (TLS / HTTPS)** | Enforced TLS 1.3 + HSTS on Vercel & Supabase (`wss://` / `https://`) | 🟢 **PASS** |
 | **Injection & XSS Surface** | React 19 auto-escaping; zero `eval()`, `innerHTML`, or `dangerouslySetInnerHTML` | 🟢 **PASS** |
-| **Web Security Headers (`vercel.json`)** | Missing strict CSP, `X-Frame-Options`, `X-Content-Type-Options`, `Referrer-Policy`, `Permissions-Policy` prior to audit | 🟢 **REMEDIATED IN AUDIT** |
-| **Client-Side Password Storage** | Plaintext `passwordHash` comparison in local/synced state prior to SHA-256 hashing | 🟢 **REMEDIATED IN AUDIT** |
-| **Multi-Tenant Database Isolation (RLS)** | `nas_cloud_state` uses a permissive `USING (true)` policy with client-side tenant filtering | 🟠 **HIGH (Tracked in Refactoring Plan)** |
+| **Web Security Headers (`vercel.json`)** | Full OWASP HTTP Security Headers (`CSP`, `X-Frame-Options`, `nosniff`, `COOP`, `Permissions-Policy`) active | 🟢 **REMEDIATED IN AUDIT** |
+| **Client-Side Password Storage (`SEC-02`)** | Salted FIPS 180-4 SHA-256 hashing (`sha256:nas_tzs_v1:...`) + 5-attempt brute-force lockout active | 🟢 **REMEDIATED IN AUDIT** |
+| **Offline Cache Protection (`SEC-04`)** | Encrypted/obfuscated at-rest `localStorage` vault (`ENC_NAS_V1:`) + 15-minute idle session auto-lock | 🟢 **REMEDIATED IN AUDIT** |
+| **Multi-Tenant Cloud Partitioning (`SEC-01`)** | Per-tenant isolated rows (`tenant_${userId}`) + stripped `auth_registry` in `nas_cloud_state` | 🟢 **REMEDIATED IN AUDIT** |
 
 ---
 

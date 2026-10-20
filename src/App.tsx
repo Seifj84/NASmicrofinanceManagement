@@ -48,7 +48,9 @@ import {
   evaluateReferralRisk,
   formatTZS,
   generateActivationKeyCode,
+  hashPassword,
   normalizeActivationKeyInput,
+  verifyPassword,
 } from './lib/finance-engine';
 import {
   AppStateData,
@@ -100,6 +102,8 @@ export default function App() {
   const [newPhoneOrEmail, setNewPhoneOrEmail] = useState('');
   const [newPassword, setNewPassword] = useState('');
   const [authError, setAuthError] = useState<string | null>(null);
+  const [failedLoginCount, setFailedLoginCount] = useState<number>(0);
+  const [lockoutUntilMs, setLockoutUntilMs] = useState<number>(0);
 
   // New Financial Assistance (Loan + Mandatory Referral) Form State
   const [selectedExistingBorrowerId, setSelectedExistingBorrowerId] = useState<string>('NEW');
@@ -147,6 +151,26 @@ export default function App() {
       setToastMessage((prev) => (prev === msg ? null : prev));
     }, 3800);
   };
+
+  // 15-minute Idle Session Auto-Lock (SEC-04)
+  useEffect(() => {
+    if (!currentUserId) return;
+    let timer: ReturnType<typeof setTimeout>;
+    const resetIdleTimer = () => {
+      clearTimeout(timer);
+      timer = setTimeout(() => {
+        setCurrentUserId(null);
+        setActiveSessionUserId(null);
+      }, 15 * 60 * 1000);
+    };
+    resetIdleTimer();
+    const events = ['mousemove', 'keydown', 'click', 'touchstart'];
+    events.forEach((ev) => window.addEventListener(ev, resetIdleTimer, { passive: true }));
+    return () => {
+      clearTimeout(timer);
+      events.forEach((ev) => window.removeEventListener(ev, resetIdleTimer));
+    };
+  }, [currentUserId]);
 
   // Listen to PWA beforeinstallprompt event
   useEffect(() => {
@@ -501,23 +525,42 @@ export default function App() {
     window.open(`https://wa.me/${cleanPhone}?text=${msg}`, '_blank', 'noopener,noreferrer');
   };
 
-  // Handlers: Login & One-Time Activation Key Onboarding
+  // Handlers: Login & One-Time Activation Key Onboarding (SEC-02 Hardened)
   const handleSignIn = (e: React.FormEvent) => {
     e.preventDefault();
     setAuthError(null);
+
+    if (Date.now() < lockoutUntilMs) {
+      const waitSec = Math.ceil((lockoutUntilMs - Date.now()) / 1000);
+      setAuthError(`Too many failed attempts. Please wait ${waitSec}s before trying again.`);
+      return;
+    }
+
     const user = appState.users.find(
       (u) =>
         u.emailOrPhone.toLowerCase() === signInIdentifier.trim().toLowerCase() &&
-        u.passwordHash === signInPassword
+        verifyPassword(signInPassword, u.passwordHash)
     );
     if (!user) {
-      setAuthError('Invalid email/phone or password. Try admin@nas.co.tz / admin123');
+      const nextCount = failedLoginCount + 1;
+      setFailedLoginCount(nextCount);
+      if (nextCount >= 5) {
+        setLockoutUntilMs(Date.now() + 30_000);
+        setFailedLoginCount(0);
+        setAuthError('5 failed login attempts detected. Login locked for 30 seconds.');
+      } else {
+        setAuthError(
+          `Invalid email/phone or password (${5 - nextCount} attempts remaining before cooldown).`
+        );
+      }
       return;
     }
     if (user.accountStatus !== 'ACTIVE') {
       setAuthError(`Account status is ${user.accountStatus}. Contact Super Admin.`);
       return;
     }
+    setFailedLoginCount(0);
+    setLockoutUntilMs(0);
     setCurrentUserId(user.id);
     setActiveSessionUserId(user.id);
     showToast(`Welcome back, ${user.businessName}!`);
@@ -548,6 +591,10 @@ export default function App() {
       setAuthError('Please fill in your Business Name, Phone/Email, and Password.');
       return;
     }
+    if (newPassword.trim().length < 6) {
+      setAuthError('Password must be at least 6 characters long.');
+      return;
+    }
     const existingUser = appState.users.find(
       (u) => u.emailOrPhone.toLowerCase() === newPhoneOrEmail.trim().toLowerCase()
     );
@@ -561,7 +608,7 @@ export default function App() {
       id: newUserId,
       businessName: newBusinessName.trim(),
       emailOrPhone: newPhoneOrEmail.trim(),
-      passwordHash: newPassword,
+      passwordHash: hashPassword(newPassword.trim()),
       role: 'LENDER',
       defaultCurrency: 'TZS',
       defaultInterestRate: 20,

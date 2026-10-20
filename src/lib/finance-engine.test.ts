@@ -5,6 +5,9 @@ import {
   computeLoanMetrics,
   normalizeActivationKeyInput,
   evaluateReferralRisk,
+  hashPassword,
+  verifyPassword,
+  isPasswordHashed,
 } from './finance-engine.ts';
 
 console.log('Running NAS Microfinance (TZS) Financial Engine Tests...');
@@ -136,4 +139,12 @@ assert.equal(risk.referredCount, 1);
 assert.equal(risk.overdueReferredCount, 1);
 assert.deepEqual(risk.overdueClientNames, ['John Mwangi']);
 
-console.log('✓ All 7 TZS Financial & Referral Engine test suites passed!');
+// 8. Cryptographic SHA-256 Password Hashing & Verification (SEC-02)
+const hashed = hashPassword('MySecretPass2026!');
+assert.equal(isPasswordHashed(hashed), true);
+assert.notEqual(hashed, 'MySecretPass2026!');
+assert.equal(verifyPassword('MySecretPass2026!', hashed), true);
+assert.equal(verifyPassword('WrongPassword', hashed), false);
+assert.equal(hashPassword(hashed), hashed); // Idempotent when already hashed
+
+console.log('✓ All 8 TZS Financial, Referral & Security Engine test suites passed!');

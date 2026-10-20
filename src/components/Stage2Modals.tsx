@@ -16,6 +16,7 @@ import {
   UserProfile,
   addDaysToDate,
   formatTZS,
+  hashPassword,
 } from '../lib/finance-engine';
 
 export function exportPortfolioToCSV(
@@ -514,19 +515,21 @@ export function AccountSecurityModal({
 }) {
   const [businessName, setBusinessName] = useState(user.businessName);
   const [emailOrPhone, setEmailOrPhone] = useState(user.emailOrPhone);
-  const [newPassword, setNewPassword] = useState(user.passwordHash);
+  const [newPassword, setNewPassword] = useState('');
 
   const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault();
-    if (!businessName.trim() || !emailOrPhone.trim() || !newPassword.trim()) {
-      alert('Business Name, Login Email/Phone, and Password cannot be empty.');
+    if (!businessName.trim() || !emailOrPhone.trim()) {
+      alert('Business Name and Login Email/Phone cannot be empty.');
       return;
     }
     onUpdateProfile({
       ...user,
       businessName: businessName.trim(),
       emailOrPhone: emailOrPhone.trim(),
-      passwordHash: newPassword,
+      passwordHash: newPassword.trim()
+        ? hashPassword(newPassword.trim())
+        : user.passwordHash,
     });
   };
 
@@ -570,17 +573,17 @@ export function AccountSecurityModal({
           </div>
           <div>
             <label className="block text-xs font-semibold uppercase text-slate-400 mb-1">
-              Login Password
+              New Login Password (SHA-256 Protected)
             </label>
             <input
-              type="text"
-              required
+              type="password"
               value={newPassword}
               onChange={(e) => setNewPassword(e.target.value)}
+              placeholder="Enter new password (or leave blank to keep current)"
               className="w-full px-3.5 py-2 rounded-xl bg-[#0B111E] border border-emerald-500/50 text-sm text-emerald-300 font-mono"
             />
             <span className="text-[11px] text-slate-400">
-              Change this from the default password so only you can access your Super Admin account.
+              Passwords are salted and hashed with SHA-256 before storage or cloud sync.
             </span>
           </div>
 

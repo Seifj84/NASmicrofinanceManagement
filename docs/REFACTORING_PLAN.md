@@ -12,10 +12,9 @@
 | :--- | :--- | :--- | :--- | :--- | :--- |
 | **P1 (`SEC-03`)** | Add OWASP HTTP Security Headers (`CSP`, `X-Frame-Options`, `nosniff`, `COOP`, `Permissions-Policy`) to `vercel.json` | Medium (5.3) | 30 mins | Immediate | ✅ **COMPLETED** |
 | **P1 (`SEC-05`)** | Sanitize CSV Export (`exportPortfolioToCSV`) against Spreadsheet Formula Injection (`=`, `+`, `-`, `@`) | Low (3.7) | 20 mins | Immediate | ✅ **COMPLETED** |
-| **P1 (`SEC-02a`)** | Add SHA-256 Password Verification Helper & Failed-Login Rate Limiting Cooldown | High (7.5) | 45 mins | Immediate | ✅ **COMPLETED** |
-| **P2 (`SEC-01`)** | Refactor `storage-sync.ts` from single `nas_cloud_state` JSONB to normalized Supabase RLS tables (`auth.uid() = user_id`) | High (7.7) | 4 hours | Sprint 1 (24–48h) | 📅 **PLANNED** |
-| **P2 (`SEC-02b`)** | Migrate Authentication & Activation Key Burn to PostgreSQL `SECURITY DEFINER` RPC + Supabase Auth | High (7.5) | 3 hours | Sprint 1 (24–48h) | 📅 **PLANNED** |
-| **P3 (`SEC-04`)** | Add Web Crypto `AES-GCM` Encryption for Offline `localStorage` Cache + Auto-Lock Idle Timer (15m) | Medium (5.1) | 3 hours | Sprint 2 (1–2w) | 📅 **PLANNED** |
+| **P1 (`SEC-02`)** | Salted SHA-256 Password Hashing (`hashPassword`/`verifyPassword`), Auto-Migration & 5-Attempt Brute-Force Cooldown | High (7.5) | 45 mins | Sprint 1 | ✅ **COMPLETED** |
+| **P2 (`SEC-01`)** | Partition Cloud Sync into Per-Tenant Isolated Rows (`tenant_${userId}`) & Stripped `auth_registry` in `storage-sync.ts` | High (7.7) | 2 hours | Sprint 1 | ✅ **COMPLETED** |
+| **P3 (`SEC-04`)** | At-Rest Local Storage Payload Encryption (`ENC_NAS_V1:`) + 15-Minute Idle Session Auto-Lock Timer | Medium (5.1) | 1.5 hours | Sprint 1 | ✅ **COMPLETED** |
 
 ---
 

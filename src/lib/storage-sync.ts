@@ -6,6 +6,8 @@ import {
   RepaymentRecord,
   UserProfile,
   addDaysToDate,
+  hashPassword,
+  isPasswordHashed,
 } from './finance-engine';
 
 export interface AppStateData {
@@ -40,7 +42,7 @@ export function createInitialSeedState(): AppStateData {
       id: adminId,
       businessName: 'NAS Financial Assistance TZ (HQ)',
       emailOrPhone: 'admin@nas.co.tz',
-      passwordHash: 'admin123',
+      passwordHash: hashPassword('admin123'),
       role: 'SUPER_ADMIN',
       defaultCurrency: 'TZS',
       defaultInterestRate: 20,
@@ -336,32 +338,82 @@ export function createInitialSeedState(): AppStateData {
   };
 }
 
+const ENC_PREFIX = 'ENC_NAS_V1:';
+const ENC_KEY = 'NAS_TZS_LOCAL_VAULT_KEY_2026';
+
+function encryptLocalPayload(jsonStr: string): string {
+  try {
+    const bytes = new TextEncoder().encode(jsonStr);
+    const keyBytes = new TextEncoder().encode(ENC_KEY);
+    const out = new Uint8Array(bytes.length);
+    for (let i = 0; i < bytes.length; i++) {
+      out[i] = bytes[i] ^ keyBytes[i % keyBytes.length];
+    }
+    let bin = '';
+    for (let i = 0; i < out.length; i++) {
+      bin += String.fromCharCode(out[i]);
+    }
+    return ENC_PREFIX + btoa(bin);
+  } catch {
+    return jsonStr;
+  }
+}
+
+function decryptLocalPayload(stored: string): string {
+  if (!stored.startsWith(ENC_PREFIX)) return stored;
+  try {
+    const b64 = stored.slice(ENC_PREFIX.length);
+    const bin = atob(b64);
+    const keyBytes = new TextEncoder().encode(ENC_KEY);
+    const out = new Uint8Array(bin.length);
+    for (let i = 0; i < bin.length; i++) {
+      out[i] = bin.charCodeAt(i) ^ keyBytes[i % keyBytes.length];
+    }
+    return new TextDecoder().decode(out);
+  } catch {
+    return stored;
+  }
+}
+
+export function sanitizeStatePasswords(state: AppStateData): AppStateData {
+  return {
+    ...state,
+    users: (state.users || []).map((u) => ({
+      ...u,
+      passwordHash: isPasswordHashed(u.passwordHash)
+        ? u.passwordHash
+        : hashPassword(u.passwordHash),
+    })),
+  };
+}
+
 export function loadAppState(): AppStateData {
   try {
     const raw = localStorage.getItem(STORAGE_KEY);
     if (!raw) {
-      const seed = createInitialSeedState();
-      localStorage.setItem(STORAGE_KEY, JSON.stringify(seed));
+      const seed = sanitizeStatePasswords(createInitialSeedState());
+      localStorage.setItem(STORAGE_KEY, encryptLocalPayload(JSON.stringify(seed)));
       return seed;
     }
-    return JSON.parse(raw) as AppStateData;
+    const decoded = decryptLocalPayload(raw);
+    const parsed = sanitizeStatePasswords(JSON.parse(decoded) as AppStateData);
+    return parsed;
   } catch {
-    return createInitialSeedState();
+    return sanitizeStatePasswords(createInitialSeedState());
   }
 }
 
 export function saveAppState(state: AppStateData): void {
-  const updated: AppStateData = {
+  const updated: AppStateData = sanitizeStatePasswords({
     ...state,
     lastSyncedAt: new Date().toISOString(),
-  };
-  localStorage.setItem(STORAGE_KEY, JSON.stringify(updated));
+  });
+  localStorage.setItem(STORAGE_KEY, encryptLocalPayload(JSON.stringify(updated)));
   if (typeof window !== 'undefined' && 'BroadcastChannel' in window) {
     const bc = new BroadcastChannel('nas_microfinance_sync');
     bc.postMessage({ type: 'STATE_UPDATED', payload: updated });
     bc.close();
   }
-  // Also push to Supabase Cloud asynchronously if configured
   void pushStateToSupabaseCloud(updated);
 }
 
@@ -432,14 +484,43 @@ export async function pushStateToSupabaseCloud(state: AppStateData): Promise<boo
   const client = createSupabaseClientIfConfigured();
   if (!client) return false;
   try {
-    const { error } = await client.from('nas_cloud_state').upsert(
+    const cleanState = sanitizeStatePasswords(state);
+    const nowIso = new Date().toISOString();
+
+    const rowsToUpsert: Array<{ id: string; payload: unknown; updated_at: string }> = [
       {
         id: 'global_workspace',
-        payload: state,
-        updated_at: new Date().toISOString(),
+        payload: cleanState,
+        updated_at: nowIso,
       },
-      { onConflict: 'id' }
-    );
+      {
+        id: 'auth_registry',
+        payload: {
+          users: cleanState.users,
+          activationKeys: cleanState.activationKeys,
+          lastSyncedAt: nowIso,
+        },
+        updated_at: nowIso,
+      },
+    ];
+
+    for (const user of cleanState.users) {
+      rowsToUpsert.push({
+        id: `tenant_${user.id}`,
+        payload: {
+          userId: user.id,
+          borrowers: cleanState.borrowers.filter((b) => b.userId === user.id),
+          loans: cleanState.loans.filter((l) => l.userId === user.id),
+          repayments: cleanState.repayments.filter((r) => r.userId === user.id),
+          lastSyncedAt: nowIso,
+        },
+        updated_at: nowIso,
+      });
+    }
+
+    const { error } = await client
+      .from('nas_cloud_state')
+      .upsert(rowsToUpsert, { onConflict: 'id' });
     return !error;
   } catch {
     return false;
@@ -457,8 +538,8 @@ export async function pullStateFromSupabaseCloud(): Promise<AppStateData | null>
       .maybeSingle();
 
     if (error || !data?.payload) return null;
-    const remoteState = data.payload as AppStateData;
-    localStorage.setItem(STORAGE_KEY, JSON.stringify(remoteState));
+    const remoteState = sanitizeStatePasswords(data.payload as AppStateData);
+    localStorage.setItem(STORAGE_KEY, encryptLocalPayload(JSON.stringify(remoteState)));
     return remoteState;
   } catch {
     return null;
