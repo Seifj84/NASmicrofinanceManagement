@@ -609,7 +609,7 @@ export function AccountSecurityModal({
             onClick={() => {
               if (
                 window.confirm(
-                  'Clear all current clients, referrals, and loans in your workspace and start fresh at TZS 0?'
+                  'Clear all current clients, referrals, and loans in your account and start fresh at TZS 0?'
                 )
               ) {
                 onClearDemoPortfolio();

@@ -641,7 +641,9 @@ export default function App() {
     saveAppState(nextState);
     setCurrentUserId(newUserId);
     setActiveSessionUserId(newUserId);
-    showToast(`Key ${formattedKey} redeemed & burned! Workspace activated.`);
+    setNewPassword('');
+    setActivationKeyInput('');
+    showToast('Account activated successfully!');
   };
 
   // Handler: Create New Financial Assistance (Loan + Mandatory Client Referral)
@@ -971,215 +973,190 @@ export default function App() {
   };
 
   // ---------------------------------------------------------------------------
-  // RENDER SCREEN 1: LOGIN & ONE-TIME ACTIVATION KEY ONBOARDING
+  // RENDER SCREEN 1: SIGN IN & SIGN UP (ACTIVATE ACCOUNT)
   // ---------------------------------------------------------------------------
   if (!currentUser) {
     return (
-      <div className="min-h-screen bg-[#0B111E] text-slate-100 flex flex-col justify-between p-4 md:p-8">
-        <header className="max-w-6xl w-full mx-auto flex items-center justify-between border-b border-slate-800 pb-4">
-          <div className="flex items-center gap-3">
-            <div className="w-10 h-10 rounded-xl bg-emerald-500/20 border border-emerald-500/40 flex items-center justify-center text-emerald-400 font-bold text-lg">
+      <div className="min-h-screen bg-[#0B111E] text-slate-100 flex flex-col justify-center items-center p-4 md:p-8">
+        <div className="max-w-md w-full space-y-6">
+          {/* Clean Brand Header */}
+          <div className="text-center space-y-2">
+            <div className="w-12 h-12 rounded-2xl bg-emerald-500 text-slate-950 font-black text-xl flex items-center justify-center mx-auto shadow-lg shadow-emerald-500/20">
               NAS
             </div>
-            <div>
-              <h1 className="font-bold text-lg tracking-tight text-white">
-                NAS MICROFINANCE MANAGEMENT
-              </h1>
-              <p className="text-xs text-slate-400">
-                Tanzanian Shilling (TZS) Financial Assistance • Mandatory Referral Tracking • PC &amp; Phone Cloud Sync
-              </p>
-            </div>
-          </div>
-          <span className="inline-flex items-center gap-2 px-3 py-1 rounded-full text-xs font-medium bg-emerald-500/10 text-emerald-400 border border-emerald-500/30">
-            <span className="w-2 h-2 rounded-full bg-emerald-400 animate-pulse" />
-            Sync Ready
-          </span>
-        </header>
-
-        <main className="max-w-lg w-full mx-auto my-8 bg-[#131C2E] border border-slate-800 rounded-2xl p-6 md:p-8 shadow-2xl">
-          <div className="grid grid-cols-2 gap-2 p-1 bg-[#0B111E] rounded-xl border border-slate-800 mb-6">
-            <button
-              type="button"
-              onClick={() => {
-                setAuthMode('SIGN_IN');
-                setAuthError(null);
-              }}
-              className={`py-2.5 px-4 rounded-lg text-sm font-semibold transition ${
-                authMode === 'SIGN_IN'
-                  ? 'bg-emerald-500 text-slate-950 shadow'
-                  : 'text-slate-400 hover:text-white'
-              }`}
-            >
-              Sign In
-            </button>
-            <button
-              type="button"
-              onClick={() => {
-                setAuthMode('ACTIVATE_KEY');
-                setAuthError(null);
-              }}
-              className={`py-2.5 px-4 rounded-lg text-sm font-semibold transition ${
-                authMode === 'ACTIVATE_KEY'
-                  ? 'bg-emerald-500 text-slate-950 shadow'
-                  : 'text-slate-400 hover:text-white'
-              }`}
-            >
-              Activate New Account
-            </button>
+            <h1 className="font-bold text-xl tracking-tight text-white">
+              NAS Microfinance
+            </h1>
+            <p className="text-xs text-slate-400">
+              {authMode === 'SIGN_IN'
+                ? 'Sign in to manage your lending portfolio'
+                : 'Enter your activation key to create an account'}
+            </p>
           </div>
 
-          {authError && (
-            <div className="mb-4 p-3 rounded-xl bg-red-500/15 border border-red-500/40 text-red-300 text-xs flex items-center gap-2">
-              <AlertTriangle className="w-4 h-4 shrink-0 text-red-400" />
-              <span>{authError}</span>
-            </div>
-          )}
-
-          {authMode === 'SIGN_IN' ? (
-            <form onSubmit={handleSignIn} className="space-y-4" autoComplete="off">
-              <div>
-                <label className="block text-xs font-semibold uppercase tracking-wider text-slate-400 mb-1.5">
-                  Email or Phone Number
-                </label>
-                <input
-                  type="text"
-                  autoComplete="username"
-                  value={signInIdentifier}
-                  onChange={(e) => setSignInIdentifier(e.target.value)}
-                  className="w-full px-3.5 py-2.5 rounded-xl bg-[#0B111E] border border-slate-700 text-white text-sm focus:border-emerald-500 focus:outline-none"
-                  placeholder="Enter your registered email or +255 phone"
-                />
-              </div>
-              <div>
-                <label className="block text-xs font-semibold uppercase tracking-wider text-slate-400 mb-1.5">
-                  Password
-                </label>
-                <input
-                  type="password"
-                  autoComplete="current-password"
-                  value={signInPassword}
-                  onChange={(e) => setSignInPassword(e.target.value)}
-                  className="w-full px-3.5 py-2.5 rounded-xl bg-[#0B111E] border border-slate-700 text-white text-sm focus:border-emerald-500 focus:outline-none"
-                  placeholder="••••••••"
-                />
-              </div>
-
+          <main className="bg-[#131C2E] border border-slate-800/90 rounded-2xl p-6 md:p-7 shadow-2xl">
+            <div className="grid grid-cols-2 gap-1.5 p-1 bg-[#0B111E] rounded-xl border border-slate-800 mb-6">
               <button
-                type="submit"
-                className="w-full py-3 rounded-xl bg-emerald-500 hover:bg-emerald-400 text-slate-950 font-bold text-sm transition cursor-pointer"
+                type="button"
+                onClick={() => {
+                  setAuthMode('SIGN_IN');
+                  setAuthError(null);
+                }}
+                className={`py-2.5 px-4 rounded-lg text-sm font-semibold transition cursor-pointer ${
+                  authMode === 'SIGN_IN'
+                    ? 'bg-emerald-500 text-slate-950 shadow'
+                    : 'text-slate-400 hover:text-white'
+                }`}
               >
-                Sign In to TZS Workspace (Enter ↵)
+                Sign In
               </button>
+              <button
+                type="button"
+                onClick={() => {
+                  setAuthMode('ACTIVATE_KEY');
+                  setAuthError(null);
+                }}
+                className={`py-2.5 px-4 rounded-lg text-sm font-semibold transition cursor-pointer ${
+                  authMode === 'ACTIVATE_KEY'
+                    ? 'bg-emerald-500 text-slate-950 shadow'
+                    : 'text-slate-400 hover:text-white'
+                }`}
+              >
+                Sign Up
+              </button>
+            </div>
 
-              <div className="pt-3 border-t border-slate-800 text-xs text-slate-500 flex items-center justify-between">
-                <span className="flex items-center gap-1.5">
-                  <ShieldCheck className="w-3.5 h-3.5 text-emerald-400" />
-                  Protected by SHA-256 &amp; Brute-Force Lockout
-                </span>
-                <span>15m Idle Auto-Lock</span>
+            {authError && (
+              <div className="mb-4 p-3 rounded-xl bg-red-500/15 border border-red-500/40 text-red-300 text-xs flex items-center gap-2">
+                <AlertTriangle className="w-4 h-4 shrink-0 text-red-400" />
+                <span>{authError}</span>
               </div>
-            </form>
-          ) : (
-            <form onSubmit={handleActivateNewUser} className="space-y-4" autoComplete="off">
-              <div>
-                <label className="block text-xs font-semibold uppercase tracking-wider text-amber-400 mb-1.5">
-                  Step 1: Enter One-Time Activation Key
-                </label>
-                <input
-                  type="text"
-                  autoComplete="off"
-                  value={activationKeyInput}
-                  onChange={(e) =>
-                    setActivationKeyInput(normalizeActivationKeyInput(e.target.value))
-                  }
-                  maxLength={19}
-                  className="w-full px-3.5 py-2.5 rounded-xl bg-[#0B111E] border-2 border-emerald-500/60 font-mono text-base tracking-widest text-emerald-300 uppercase focus:border-emerald-400 focus:outline-none"
-                  placeholder="NAS-2026-XXXX-XXXX"
-                />
-                <div className="mt-1.5 text-xs">
-                  {verifiedKeyObj ? (
-                    verifiedKeyObj.status === 'UNUSED' ? (
-                      <span className="text-emerald-400 flex items-center gap-1.5 font-medium">
-                        <CheckCircle2 className="w-4 h-4" /> Verified Unused Key • Expires immediately after account creation
-                      </span>
-                    ) : (
-                      <span className="text-red-400 flex items-center gap-1.5 font-medium">
-                        <AlertTriangle className="w-4 h-4" /> Key status is {verifiedKeyObj.status} (Cannot be reused)
-                      </span>
-                    )
-                  ) : (
-                    <span className="text-slate-400">
-                      Enter the 16-character single-use activation key issued by the Super Admin.
-                    </span>
-                  )}
-                </div>
-              </div>
+            )}
 
-              <div className="pt-2 border-t border-slate-800">
-                <label className="block text-xs font-semibold uppercase tracking-wider text-slate-400 mb-1.5">
-                  Step 2: Business / Lender Name
-                </label>
-                <input
-                  type="text"
-                  value={newBusinessName}
-                  onChange={(e) => setNewBusinessName(e.target.value)}
-                  className="w-full px-3.5 py-2.5 rounded-xl bg-[#0B111E] border border-slate-700 text-white text-sm focus:border-emerald-500 focus:outline-none"
-                  placeholder="e.g. Dar Capital Microfinance"
-                />
-              </div>
-
-              <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+            {authMode === 'SIGN_IN' ? (
+              <form onSubmit={handleSignIn} className="space-y-4" autoComplete="off">
                 <div>
                   <label className="block text-xs font-semibold uppercase tracking-wider text-slate-400 mb-1.5">
-                    Phone Number or Email
+                    Email or Phone Number
                   </label>
                   <input
                     type="text"
+                    required
+                    autoComplete="username"
+                    value={signInIdentifier}
+                    onChange={(e) => setSignInIdentifier(e.target.value)}
+                    className="w-full px-3.5 py-2.5 rounded-xl bg-[#0B111E] border border-slate-700 text-white text-sm focus:border-emerald-500 focus:outline-none"
+                    placeholder="Email or phone number"
+                  />
+                </div>
+                <div>
+                  <label className="block text-xs font-semibold uppercase tracking-wider text-slate-400 mb-1.5">
+                    Password
+                  </label>
+                  <input
+                    type="password"
+                    required
+                    autoComplete="current-password"
+                    value={signInPassword}
+                    onChange={(e) => setSignInPassword(e.target.value)}
+                    className="w-full px-3.5 py-2.5 rounded-xl bg-[#0B111E] border border-slate-700 text-white text-sm focus:border-emerald-500 focus:outline-none"
+                    placeholder="••••••••"
+                  />
+                </div>
+
+                <button
+                  type="submit"
+                  className="w-full py-3 rounded-xl bg-emerald-500 hover:bg-emerald-400 text-slate-950 font-bold text-sm transition cursor-pointer shadow-lg shadow-emerald-500/10"
+                >
+                  Sign In
+                </button>
+              </form>
+            ) : (
+              <form onSubmit={handleActivateNewUser} className="space-y-4" autoComplete="off">
+                <div>
+                  <label className="block text-xs font-semibold uppercase tracking-wider text-amber-400 mb-1.5">
+                    Activation Key
+                  </label>
+                  <input
+                    type="text"
+                    required
+                    autoComplete="off"
+                    value={activationKeyInput}
+                    onChange={(e) =>
+                      setActivationKeyInput(normalizeActivationKeyInput(e.target.value))
+                    }
+                    maxLength={19}
+                    className="w-full px-3.5 py-2.5 rounded-xl bg-[#0B111E] border border-emerald-500/60 font-mono text-sm tracking-widest text-emerald-300 uppercase focus:border-emerald-400 focus:outline-none"
+                    placeholder="NAS-2026-XXXX-XXXX"
+                  />
+                  {verifiedKeyObj && (
+                    <div className="mt-1.5 text-xs">
+                      {verifiedKeyObj.status === 'UNUSED' ? (
+                        <span className="text-emerald-400 flex items-center gap-1.5 font-medium">
+                          <CheckCircle2 className="w-4 h-4" /> Valid Activation Key
+                        </span>
+                      ) : (
+                        <span className="text-red-400 flex items-center gap-1.5 font-medium">
+                          <AlertTriangle className="w-4 h-4" /> Key is {verifiedKeyObj.status}
+                        </span>
+                      )}
+                    </div>
+                  )}
+                </div>
+
+                <div>
+                  <label className="block text-xs font-semibold uppercase tracking-wider text-slate-400 mb-1.5">
+                    Full Name or Business Name
+                  </label>
+                  <input
+                    type="text"
+                    required
+                    value={newBusinessName}
+                    onChange={(e) => setNewBusinessName(e.target.value)}
+                    className="w-full px-3.5 py-2.5 rounded-xl bg-[#0B111E] border border-slate-700 text-white text-sm focus:border-emerald-500 focus:outline-none"
+                    placeholder="Your name or business name"
+                  />
+                </div>
+
+                <div>
+                  <label className="block text-xs font-semibold uppercase tracking-wider text-slate-400 mb-1.5">
+                    Email or Phone Number
+                  </label>
+                  <input
+                    type="text"
+                    required
                     value={newPhoneOrEmail}
                     onChange={(e) => setNewPhoneOrEmail(e.target.value)}
                     className="w-full px-3.5 py-2.5 rounded-xl bg-[#0B111E] border border-slate-700 text-white text-sm focus:border-emerald-500 focus:outline-none"
-                    placeholder="+255 712 000 000"
+                    placeholder="Email or phone number"
                   />
                 </div>
+
                 <div>
                   <label className="block text-xs font-semibold uppercase tracking-wider text-slate-400 mb-1.5">
-                    Primary Currency
+                    Password
                   </label>
                   <input
-                    type="text"
-                    disabled
-                    value="TZS (Tanzanian Shilling)"
-                    className="w-full px-3.5 py-2.5 rounded-xl bg-slate-900 border border-slate-800 text-emerald-400 font-semibold text-sm"
+                    type="password"
+                    required
+                    autoComplete="new-password"
+                    value={newPassword}
+                    onChange={(e) => setNewPassword(e.target.value)}
+                    className="w-full px-3.5 py-2.5 rounded-xl bg-[#0B111E] border border-slate-700 text-white text-sm focus:border-emerald-500 focus:outline-none"
+                    placeholder="Create a password"
                   />
                 </div>
-              </div>
 
-              <div>
-                <label className="block text-xs font-semibold uppercase tracking-wider text-slate-400 mb-1.5">
-                  Create Password
-                </label>
-                <input
-                  type="password"
-                  value={newPassword}
-                  onChange={(e) => setNewPassword(e.target.value)}
-                  className="w-full px-3.5 py-2.5 rounded-xl bg-[#0B111E] border border-slate-700 text-white text-sm focus:border-emerald-500 focus:outline-none"
-                  placeholder="••••••••"
-                />
-              </div>
-
-              <button
-                type="submit"
-                className="w-full py-3 rounded-xl bg-emerald-500 hover:bg-emerald-400 text-slate-950 font-bold text-sm transition cursor-pointer"
-              >
-                Activate Key &amp; Launch My TZS Workspace (Enter ↵)
-              </button>
-            </form>
-          )}
-        </main>
-
-        <footer className="text-center text-xs text-slate-500">
-          NAS Microfinance Management v1.1.0 • TZS Financial Engine • Mandatory Client Referrals
-        </footer>
+                <button
+                  type="submit"
+                  className="w-full py-3 rounded-xl bg-emerald-500 hover:bg-emerald-400 text-slate-950 font-bold text-sm transition cursor-pointer shadow-lg shadow-emerald-500/10"
+                >
+                  Activate Account
+                </button>
+              </form>
+            )}
+          </main>
+        </div>
       </div>
     );
   }
