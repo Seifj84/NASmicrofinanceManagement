@@ -1,0 +1,15 @@
+@import "tailwindcss";
+
+@layer base {
+  body {
+    font-family: Inter, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+    background-color: #0b111e;
+    color: #f1f5f9;
+  }
+}
+
+@media print {
+  .no-print {
+    display: none !important;
+  }
+}

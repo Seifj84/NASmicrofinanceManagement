@@ -1,0 +1,10 @@
+{
+  "name": "NAS Microfinance Management (TZS)",
+  "short_name": "NAS Finance",
+  "description": "TZS Financial Assistance, Mandatory Client Referrals, Overdue Rollover Engine & Cross-Network Cloud Sync",
+  "start_url": "/",
+  "display": "standalone",
+  "background_color": "#0B111E",
+  "theme_color": "#10B981",
+  "orientation": "any"
+}

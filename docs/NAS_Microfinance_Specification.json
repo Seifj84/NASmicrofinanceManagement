@@ -1,0 +1,339 @@
+{
+  "documentMetadata": {
+    "projectName": "NAS Microfinance Management System",
+    "version": "1.1.0",
+    "primaryCurrency": "TZS (Tanzanian Shilling)",
+    "createdAt": "2026-10-20T13:58:00+03:00",
+    "formatsGenerated": [
+      "docs/NAS_Microfinance_Blueprint.md",
+      "docs/NAS_Microfinance_Specification.json",
+      "docs/NAS_Microfinance_Blueprint.docx",
+      "docs/NAS_Microfinance_Blueprint.pdf",
+      "docs/mockups/01_desktop_mobile_dashboard.png",
+      "docs/mockups/02_loan_creation_calculator.png",
+      "docs/mockups/03_activation_key_onboarding.png",
+      "docs/mockups/04_repayment_and_overdue_tracker.png"
+    ]
+  },
+  "productVision": {
+    "summary": "A cross-platform Progressive Web App (PWA) for managing financial assistance (loans) in Tanzanian Shillings (TZS) with mandatory Client Referral / Guarantor tracking, automatic interest calculation, strict deadline & overdue rollover enforcement, real-time PC-to-Phone synchronization outside the local network, and a one-time activation key licensing system for multi-user expansion.",
+    "coreCapabilities": [
+      "All financial assistance, interest, penalties, and repayments tracked and formatted in Tanzanian Shillings (TZS)",
+      "Mandatory Referral / Guarantor Information on every client (Referral Name, Phone Number, Relationship, Location/NIDA, and Referral Trust Chain analytics)",
+      "Real-time cloud synchronization between Desktop PC and Mobile Phone over any network (Wi-Fi, 4G, 5G) with local IndexedDB offline fallback",
+      "Instant dashboard visibility of Total Principal Offered (TZS), Interest %, Expected Profit (TZS), Total Expected Collection (TZS), Realized Profit (TZS), and Overdue Loans",
+      "Automated time-bound interest & 'Or Else' overdue penalty/rollover engine (e.g., 30 days for 20% interest, plus automatic rollover or daily penalty after day 30)",
+      "Multi-tenant SaaS architecture with single-use expiring Activation Keys and Super Admin management portal"
+    ]
+  },
+  "clientReferralSpecification": {
+    "mandatoryForEveryClient": true,
+    "fields": [
+      {
+        "field": "referral_name",
+        "type": "string (required)",
+        "description": "Full name of the person who referred or guaranteed the client (e.g., Musa Juma)"
+      },
+      {
+        "field": "referral_phone",
+        "type": "string (required)",
+        "description": "Phone number of the referral (+255 7XX XXX XXX) for 1-click Call or WhatsApp escalation"
+      },
+      {
+        "field": "referral_relationship",
+        "type": "enum/string (required)",
+        "options": ["Business Partner", "Colleague", "Family Member", "Existing Trusted Client", "Employer", "Neighbor"],
+        "description": "How the referral knows or guarantees the borrower"
+      },
+      {
+        "field": "referral_location_or_id",
+        "type": "string (optional)",
+        "description": "Physical shop/office address, NIDA ID, or notes about the referral"
+      },
+      {
+        "field": "referred_by_borrower_id",
+        "type": "UUID (optional)",
+        "description": "Links to an existing borrower record if the referral is also an active/past client"
+      }
+    ],
+    "escalationFeatures": [
+      "Global search ('Ctrl+K') finds loans by either Client Name/Phone OR Referral Name/Phone",
+      "1-Click / 1-Tap 'Notify Referral via WhatsApp' (Shortcut 'R') when a referred client becomes Overdue",
+      "Automatic warning during New Loan creation if the chosen Referral has another referred client currently Overdue"
+    ]
+  },
+  "financialEngine": {
+    "currency": "TZS",
+    "supportedPaymentMethods": ["M_PESA", "TIGO_PESA", "AIRTEL_MONEY", "HALOPESA", "BANK_TRANSFER", "CASH"],
+    "variables": {
+      "P": "Principal Amount Offered in TZS (e.g., TZS 500,000)",
+      "r": "Interest Rate Decimal per cycle (e.g., 20% = 0.20)",
+      "D": "Loan Duration in Days (e.g., 30)",
+      "T_start": "Issue Date (ISO 8601 Date)",
+      "T_due": "Due Date = T_start + D days",
+      "G": "Grace Period Days (integer, default 0)"
+    },
+    "baseFormulas": {
+      "expectedBaseInterest": "I_base = P * r",
+      "initialTotalExpectedReturn": "E_initial = P + (P * r) = P * (1 + r)",
+      "remainingBalance": "B_rem = (P + I_base + F_penalty) - sum(M_paid)"
+    },
+    "overdueOrElseRules": [
+      {
+        "code": "SIMPLE_ROLLOVER",
+        "name": "Fixed Principal Cycle Rollover (Default)",
+        "description": "When unpaid after Due Date + Grace Period, adds (P * r) for each elapsed cycle of D days.",
+        "formula": "F_penalty = ceil(days_overdue / D) * (P * r)",
+        "example": "Loan of TZS 500,000 @ 20% for 30 days (TZS 600,000 due). On Day 31, Cycle 2 starts and adds +TZS 100,000. New Total Expected = TZS 700,000."
+      },
+      {
+        "code": "COMPOUND_ROLLOVER",
+        "name": "Compound Unpaid Balance Rollover",
+        "description": "When unpaid after Due Date + Grace Period, applies r% on the entire unpaid balance (Principal + unpaid Interest).",
+        "formula": "New_Balance = B_rem * ((1 + r) ^ ceil(days_overdue / D))",
+        "example": "Loan of TZS 500,000 @ 20% for 30 days (TZS 600,000 due). On Day 31, adds 20% of TZS 600,000 (+TZS 120,000). New Total Expected = TZS 720,000."
+      },
+      {
+        "code": "DAILY_PENALTY",
+        "name": "Daily Late Percentage Fee",
+        "description": "Adds a daily percentage fee for every day overdue past Due Date + Grace Period.",
+        "formula": "F_penalty = P * r_daily * days_overdue",
+        "example": "Loan of TZS 500,000 with 1% daily late fee. 5 days overdue adds +TZS 25,000. New Total Expected = TZS 625,000."
+      },
+      {
+        "code": "MANUAL_PENALTY",
+        "name": "Manual Alert & Custom TZS Penalty",
+        "description": "Highlights loan in red as OVERDUE on PC & Phone and allows lender to apply a custom TZS penalty or extend due date with 1 click.",
+        "formula": "F_penalty = manual_tzs_amount_entered_by_lender",
+        "example": "Lender clicks '+ Apply Penalty' or '+ Extend 7 Days' from the Loan Detail drawer."
+      }
+    ],
+    "repaymentAllocationOrder": [
+      "1. Accrued Overdue Penalties / Rollover Fees in TZS (F_penalty)",
+      "2. Expected Base Interest in TZS (I_base -> moves to Realized Profit)",
+      "3. Principal Offered in TZS (P -> returns to Available Capital Pool)"
+    ]
+  },
+  "activationKeyEngine": {
+    "keyFormat": "NAS-YYYY-XXXX-XXXX (16 alphanumeric uppercase characters formatted with hyphens)",
+    "lifecycleStates": ["UNUSED", "USED", "EXPIRED", "REVOKED"],
+    "atomicRedemptionFlow": [
+      "1. User enters Activation Key on Sign-Up screen",
+      "2. System checks activation_keys table: key exists, status == 'UNUSED', and (claim_expires_at IS NULL OR claim_expires_at > NOW())",
+      "3. User submits registration details (Business Name, Phone/Email, Password, Default Currency = TZS)",
+      "4. PostgreSQL transactional RPC creates auth user + profile, and updates activation_keys SET status = 'USED', used_by = new_user_id, used_at = NOW()",
+      "5. Key is permanently burned; any subsequent attempt to use the same key returns HTTP 409 'Activation key has already been used and expired.'"
+    ]
+  },
+  "screensAndInteractions": [
+    {
+      "screenId": "SCREEN_01",
+      "title": "Login & Activation Key Onboarding (TZS Workspace)",
+      "mockupImage": "docs/mockups/03_activation_key_onboarding.png",
+      "desktopLayout": "Centered split-tab card (520px width) on dark slate-navy canvas with live sync indicator in top bar.",
+      "mobileLayout": "Full-screen vertical card with sticky bottom submit button and native paste button for activation key.",
+      "interactions": [
+        {
+          "step": "Switch to Activation Tab",
+          "desktopKeyOrClick": "Press 'Alt+2' or click '[Activate New Account]' tab",
+          "mobileTouch": "Tap '[Activate New Account]' segmented control",
+          "systemResponse": "Reveals Step 1 (Activation Key Input) and auto-focuses the key field."
+        },
+        {
+          "step": "Enter / Paste Activation Key",
+          "desktopKeyOrClick": "Type or press 'Ctrl+V' to paste 16-char key (e.g., NAS-2026-8F4K-99XM)",
+          "mobileTouch": "Tap '[Paste Key]' chip or type on uppercase alphanumeric keyboard",
+          "systemResponse": "Auto-inserts hyphens every 4 chars, verifies key status against cloud DB in <150ms, and shows green 'Verified Single-Use Key' badge."
+        },
+        {
+          "step": "Complete Profile & Submit",
+          "desktopKeyOrClick": "Press 'Tab' through Business Name, Phone (+255...), Password -> Press 'Enter'",
+          "mobileTouch": "Fill fields using mobile 'Next' key -> Tap '[Activate & Launch TZS Workspace]'",
+          "systemResponse": "Burns activation key atomically, initializes isolated TZS workspace, and redirects to Executive Dashboard."
+        }
+      ]
+    },
+    {
+      "screenId": "SCREEN_02",
+      "title": "Executive Dashboard in TZS (Desktop & Mobile)",
+      "mockupImage": "docs/mockups/01_desktop_mobile_dashboard.png",
+      "desktopLayout": "Left navigation sidebar (240px) + Top Command Bar + 4 TZS KPI Summary Cards (Principal Offered: TZS 12,500,000, Expected Profit: +TZS 2,500,000, Total Expected Collection: TZS 15,000,000, Overdue Alert: TZS 1,800,000) + Active Loans & Referrals Table.",
+      "mobileLayout": "Top status header + Hero Expected Collection Card (TZS 15,000,000) + 2x2 KPI Grid + Filter Chips + Swipeable Loan Cards showing Client & Referral + Floating '+' Button + Bottom Nav Bar.",
+      "interactions": [
+        {
+          "step": "Global Search by Client or Referral",
+          "desktopKeyOrClick": "Press 'Ctrl+K' or '/' -> type Client or Referral name/phone",
+          "mobileTouch": "Tap Search icon in top bar -> type Client or Referral name/phone",
+          "systemResponse": "Instantly filters borrowers and loans by either the borrower's details or their Referral/Guarantor's details."
+        },
+        {
+          "step": "Launch New TZS Loan Form",
+          "desktopKeyOrClick": "Press 'N' or click '[+ New Loan]' button",
+          "mobileTouch": "Tap floating emerald '(+)' button at bottom-right",
+          "systemResponse": "Opens Screen 3 (New Financial Assistance + Mandatory Referral Modal / Bottom Sheet)."
+        },
+        {
+          "step": "Filter Overdue Loans",
+          "desktopKeyOrClick": "Press 'O' or click red 'OVERDUE' KPI card",
+          "mobileTouch": "Tap '[Overdue]' filter pill",
+          "systemResponse": "Filters list to loans past their due date, sorted by urgency and TZS rollover amount."
+        },
+        {
+          "step": "Quick Row Navigation & Referral Escalation",
+          "desktopKeyOrClick": "Press 'J'/'K' to select loan -> 'Enter' for details, 'P' to record payment, 'W' to message Client, or 'R' to contact Referral",
+          "mobileTouch": "Tap loan card for details, Swipe Right to record payment, Tap '[Client 💬]' or Tap '[Ref 📞]'",
+          "systemResponse": "Opens Loan Detail Drawer, Repayment dialog, or pre-filled WhatsApp/Call to Client or Referral."
+        }
+      ]
+    },
+    {
+      "screenId": "SCREEN_03",
+      "title": "New Financial Assistance (Client + Referral Info & Live TZS Calculator)",
+      "mockupImage": "docs/mockups/02_loan_creation_calculator.png",
+      "desktopLayout": "2-column modal dialog: Left column for (1) Client Details, (2) Mandatory Referral/Guarantor Details, (3) Principal in TZS, Rate %, Duration, and Overdue Rule; Right column for Live TZS Earnings & Referral Summary Card.",
+      "mobileLayout": "Slide-up bottom sheet with Client & Referral inputs, Quick Preset pills ('7d @ 10%', '14d @ 15%', '30d @ 20%'), decimal keypad inputs, and sticky live TZS preview banner.",
+      "interactions": [
+        {
+          "step": "Enter Client Information",
+          "desktopKeyOrClick": "Type Client Name & Phone (+255...) or select existing client from dropdown",
+          "mobileTouch": "Tap Client input -> pick existing client chip or enter new name & phone",
+          "systemResponse": "If existing client is selected, auto-fills their saved Referral Information and displays their repayment trust score."
+        },
+        {
+          "step": "Enter Mandatory Referral / Guarantor Information",
+          "desktopKeyOrClick": "Press 'Tab' -> Enter Referral Full Name, Referral Phone (+255...), Relationship (e.g., Business Partner), and Location/NIDA note",
+          "mobileTouch": "Tap Referral fields (or tap '[Pick Existing Client]' as Referee)",
+          "systemResponse": "Validates referral fields are complete and checks if this referral has any other referred clients currently Overdue."
+        },
+        {
+          "step": "Enter Principal Offered in TZS",
+          "desktopKeyOrClick": "Press 'Tab' -> Type numeric TZS amount (e.g., '500000')",
+          "mobileTouch": "Tap Principal (TZS) field -> numeric keypad opens -> tap '500000'",
+          "systemResponse": "Auto-formats as 'TZS 500,000' and live preview immediately computes Expected Interest (+TZS 100,000) and Total Return (TZS 600,000)."
+        },
+        {
+          "step": "Set Rate %, Duration Days & Overdue Rule",
+          "desktopKeyOrClick": "Press 'Alt+1' (7d@10%), 'Alt+2' (14d@15%), 'Alt+3' (30d@20%), and choose Overdue Rule",
+          "mobileTouch": "Tap preset pill '[30d @ 20%]' and tap Overdue Rule card",
+          "systemResponse": "Displays Due Date and exact Day 31+ overdue projection in TZS (e.g., 'If unpaid after 30 days: becomes TZS 700,000')."
+        },
+        {
+          "step": "Issue TZS Financial Assistance",
+          "desktopKeyOrClick": "Press 'Enter' or 'Ctrl+Enter'",
+          "mobileTouch": "Tap '[Confirm & Issue TZS Loan]'",
+          "systemResponse": "Saves client, referral, and loan to DB, updates TZS dashboard KPIs, syncs across PC & Phone, and offers 1-click Receipt sharing."
+        }
+      ]
+    },
+    {
+      "screenId": "SCREEN_04",
+      "title": "Loan Detail, Overdue 'Or Else' Rollover, Referral Escalation & Repayment Drawer",
+      "mockupImage": "docs/mockups/04_repayment_and_overdue_tracker.png",
+      "desktopLayout": "Slide-over right drawer (580px) showing Overdue Banner, Client & Referral Contact Card, TZS Breakdown Cards, Mobile Money / Cash Repayment form, and Audit Timeline.",
+      "mobileLayout": "Full-screen detail view with 1-tap Client & Referral Call/WhatsApp buttons and sticky bottom '[Record TZS Payment]' bar.",
+      "interactions": [
+        {
+          "step": "One-Click Full TZS Settlement",
+          "desktopKeyOrClick": "Press 'F' (Full Balance) then 'Enter'",
+          "mobileTouch": "Tap '[Full Balance (TZS 500,000)]' chip then tap '[Record Payment]'",
+          "systemResponse": "Fills exact remaining TZS balance, marks loan as PAID, and transfers interest to Realized Profit (TZS)."
+        },
+        {
+          "step": "Partial Repayment via Mobile Money / Cash",
+          "desktopKeyOrClick": "Type partial TZS amount -> Select M-Pesa / Tigo Pesa / Airtel Money / Cash -> Press 'Enter'",
+          "mobileTouch": "Enter partial TZS amount -> Select payment method -> Tap '[Record Payment]'",
+          "systemResponse": "Deducts payment from remaining TZS balance, updates progress bar, and logs transaction reference in audit history."
+        },
+        {
+          "step": "Notify Referral / Guarantor on Overdue Loan",
+          "desktopKeyOrClick": "Press 'R' or click '[Notify Referral 💬]'",
+          "mobileTouch": "Tap '[Notify Referral 💬]' or '[Call Referral 📞]'",
+          "systemResponse": "Opens WhatsApp or Phone Dialer to the Referral's phone number with loan & overdue details."
+        }
+      ]
+    },
+    {
+      "screenId": "SCREEN_05",
+      "title": "Client & Referral Directory + Credit Risk Profile",
+      "mockupImage": "docs/mockups/01_desktop_mobile_dashboard.png",
+      "desktopLayout": "Searchable data table with columns: Client Name & Phone, Referred By (Name, Phone, Relation), Active Loan (TZS), Lifetime Profit Earned (TZS), and Trust Score.",
+      "mobileLayout": "Contact cards displaying Client & Referral info with 1-tap Call, WhatsApp, and Trust Score badge.",
+      "interactions": [
+        {
+          "step": "Inspect Client & Referral Chain",
+          "desktopKeyOrClick": "Press 'B' -> Select client with 'Up/Down' -> Press 'Enter'",
+          "mobileTouch": "Tap 'People' tab -> Tap client card",
+          "systemResponse": "Shows complete TZS borrowing history, guarantor/referral contact card, and any other clients referred by the same person."
+        }
+      ]
+    },
+    {
+      "screenId": "SCREEN_06",
+      "title": "Super Admin Activation Key Generator & User Manager",
+      "mockupImage": "docs/mockups/03_activation_key_onboarding.png",
+      "desktopLayout": "Admin console with Key Generator form at top and filterable Keys & Active Tenants table below.",
+      "mobileLayout": "Admin tab with 1-tap '[Generate Key]' card and shareable key list.",
+      "interactions": [
+        {
+          "step": "Generate New Activation Key",
+          "desktopKeyOrClick": "Press 'K' -> Press 'G' or click '[Generate Key]'",
+          "mobileTouch": "Tap Admin Key icon -> Tap '[Generate Key]'",
+          "systemResponse": "Generates unique key 'NAS-2026-XXXX-XXXX' with status UNUSED."
+        },
+        {
+          "step": "Copy / Share Key with New User",
+          "desktopKeyOrClick": "Press 'C' or click '[Copy Key]'",
+          "mobileTouch": "Tap '[Share via WhatsApp]'",
+          "systemResponse": "Copies key + invite instructions so the recipient can create their TZS lender account before the key expires."
+        }
+      ]
+    }
+  ],
+  "implementationBlueprintPhases": [
+    {
+      "phase": 1,
+      "name": "Project Scaffolding & PWA Setup",
+      "deliverables": [
+        "Next.js TypeScript + Tailwind CSS project initialized in workspace",
+        "PWA manifest.json, icons, and offline service worker configured for PC & Mobile installation",
+        "Responsive layout shell (Desktop Sidebar + Mobile Bottom Navigation)"
+      ]
+    },
+    {
+      "phase": 2,
+      "name": "TZS Financial Engine & Client Referral Model",
+      "deliverables": [
+        "Pure TypeScript financial module (src/lib/finance-engine.ts) with TZS currency formatting",
+        "Mandatory Client Referral / Guarantor validation and referral-chain risk badges",
+        "Support for Principal (TZS), Interest %, Duration Days, Due Date, and all 4 Overdue 'Or Else' modes"
+      ]
+    },
+    {
+      "phase": 3,
+      "name": "Multi-User Auth & One-Time Activation Key System",
+      "deliverables": [
+        "Database schema & Row-Level Security (RLS) for strict per-user isolation",
+        "Sign-Up with Activation Key verification & atomic key burn (UNUSED -> USED)",
+        "Super Admin Key Generator & User Licensing management screen"
+      ]
+    },
+    {
+      "phase": 4,
+      "name": "Executive TZS Dashboard, Loan + Referral Modal & Repayment Drawer",
+      "deliverables": [
+        "Executive Dashboard with live TZS KPI cards (Offered, Interest %, Expected Profit, Overdue)",
+        "New Financial Assistance modal/sheet with Client + Mandatory Referral fields and live TZS calculator",
+        "Loan Detail & Repayment drawer with Mobile Money methods (M-Pesa, Tigo Pesa, Airtel Money, HaloPesa, Cash), 1-click Full Balance settlement, and Client/Referral WhatsApp reminders"
+      ]
+    },
+    {
+      "phase": 5,
+      "name": "Cross-Network Cloud Sync, Offline Queue & Keyboard Shortcuts",
+      "deliverables": [
+        "Real-time sync via Supabase / Cloud API + local IndexedDB persistence",
+        "Global desktop keyboard shortcuts (N, P, R, W, D, L, B, K, O, Ctrl+K, Esc) and mobile touch gestures",
+        "Shareable TZS PDF/PNG Receipt generator showing Client, Referral, and Loan breakdown"
+      ]
+    }
+  ]
+}
