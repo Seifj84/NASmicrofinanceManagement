@@ -377,14 +377,31 @@ export function setActiveSessionUserId(userId: string | null): void {
   }
 }
 
+const DEFAULT_SUPABASE_URL = 'https://bmvltojicwzqzysdpbwn.supabase.co';
+const DEFAULT_SUPABASE_ANON_KEY = 'sb_publishable_8wphIwCU7odOPR0KOL644Q_ryhmgYtk';
+
+export function normalizeSupabaseUrl(url: string): string {
+  return url.trim().replace(/\/rest\/v1\/?$/i, '').replace(/\/+$/, '');
+}
+
 export function loadCloudConfig(): CloudSyncConfig {
-  const envUrl = import.meta.env.VITE_SUPABASE_URL || '';
-  const envKey = import.meta.env.VITE_SUPABASE_ANON_KEY || '';
+  const envUrl = normalizeSupabaseUrl(
+    import.meta.env.VITE_SUPABASE_URL || DEFAULT_SUPABASE_URL
+  );
+  const envKey = (
+    import.meta.env.VITE_SUPABASE_ANON_KEY || DEFAULT_SUPABASE_ANON_KEY
+  ).trim();
   try {
     const raw = localStorage.getItem(CLOUD_CONFIG_KEY);
     if (raw) {
       const parsed = JSON.parse(raw) as CloudSyncConfig;
-      if (parsed.supabaseUrl && parsed.supabaseAnonKey) return parsed;
+      if (parsed.supabaseUrl && parsed.supabaseAnonKey) {
+        return {
+          supabaseUrl: normalizeSupabaseUrl(parsed.supabaseUrl),
+          supabaseAnonKey: parsed.supabaseAnonKey.trim(),
+          enabled: true,
+        };
+      }
     }
   } catch {
     // ignore
@@ -402,9 +419,10 @@ export function saveCloudConfig(cfg: CloudSyncConfig): void {
 
 export function createSupabaseClientIfConfigured(cfg?: CloudSyncConfig): SupabaseClient | null {
   const activeCfg = cfg || loadCloudConfig();
-  if (!activeCfg.enabled || !activeCfg.supabaseUrl || !activeCfg.supabaseAnonKey) return null;
+  const cleanUrl = normalizeSupabaseUrl(activeCfg.supabaseUrl || '');
+  if (!activeCfg.enabled || !cleanUrl || !activeCfg.supabaseAnonKey) return null;
   try {
-    return createClient(activeCfg.supabaseUrl, activeCfg.supabaseAnonKey);
+    return createClient(cleanUrl, activeCfg.supabaseAnonKey.trim());
   } catch {
     return null;
   }
