@@ -42,7 +42,8 @@ export function createInitialSeedState(): AppStateData {
       id: adminId,
       businessName: 'NAS Financial Assistance TZ (HQ)',
       emailOrPhone: 'admin@nas.co.tz',
-      passwordHash: hashPassword('admin123'),
+      passwordHash:
+        'sha256:nas_tzs_v1:2c04724193f89a0b9727654fd610721683fdd5efa349db56a77e6a010ff3a10c',
       role: 'SUPER_ADMIN',
       defaultCurrency: 'TZS',
       defaultInterestRate: 20,

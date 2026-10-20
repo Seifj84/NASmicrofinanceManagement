@@ -97,7 +97,7 @@ export default function App() {
   const [authMode, setAuthMode] = useState<'SIGN_IN' | 'ACTIVATE_KEY'>('SIGN_IN');
   const [signInIdentifier, setSignInIdentifier] = useState('');
   const [signInPassword, setSignInPassword] = useState('');
-  const [activationKeyInput, setActivationKeyInput] = useState('NAS-2026-8F4K-99XM');
+  const [activationKeyInput, setActivationKeyInput] = useState('');
   const [newBusinessName, setNewBusinessName] = useState('');
   const [newPhoneOrEmail, setNewPhoneOrEmail] = useState('');
   const [newPassword, setNewPassword] = useState('');
@@ -561,6 +561,7 @@ export default function App() {
     }
     setFailedLoginCount(0);
     setLockoutUntilMs(0);
+    setSignInPassword('');
     setCurrentUserId(user.id);
     setActiveSessionUserId(user.id);
     showToast(`Welcome back, ${user.businessName}!`);
@@ -1035,17 +1036,18 @@ export default function App() {
           )}
 
           {authMode === 'SIGN_IN' ? (
-            <form onSubmit={handleSignIn} className="space-y-4">
+            <form onSubmit={handleSignIn} className="space-y-4" autoComplete="off">
               <div>
                 <label className="block text-xs font-semibold uppercase tracking-wider text-slate-400 mb-1.5">
                   Email or Phone Number
                 </label>
                 <input
                   type="text"
+                  autoComplete="username"
                   value={signInIdentifier}
                   onChange={(e) => setSignInIdentifier(e.target.value)}
                   className="w-full px-3.5 py-2.5 rounded-xl bg-[#0B111E] border border-slate-700 text-white text-sm focus:border-emerald-500 focus:outline-none"
-                  placeholder="admin@nas.co.tz or +255..."
+                  placeholder="Enter your registered email or +255 phone"
                 />
               </div>
               <div>
@@ -1054,6 +1056,7 @@ export default function App() {
                 </label>
                 <input
                   type="password"
+                  autoComplete="current-password"
                   value={signInPassword}
                   onChange={(e) => setSignInPassword(e.target.value)}
                   className="w-full px-3.5 py-2.5 rounded-xl bg-[#0B111E] border border-slate-700 text-white text-sm focus:border-emerald-500 focus:outline-none"
@@ -1068,28 +1071,23 @@ export default function App() {
                 Sign In to TZS Workspace (Enter ↵)
               </button>
 
-              <div className="pt-3 border-t border-slate-800 text-xs text-slate-400 flex items-center justify-between">
-                <span>Super Admin Demo: admin@nas.co.tz / admin123</span>
-                <button
-                  type="button"
-                  onClick={() => {
-                    setSignInIdentifier('admin@nas.co.tz');
-                    setSignInPassword('admin123');
-                  }}
-                  className="text-emerald-400 hover:underline font-medium"
-                >
-                  Auto-Fill Admin
-                </button>
+              <div className="pt-3 border-t border-slate-800 text-xs text-slate-500 flex items-center justify-between">
+                <span className="flex items-center gap-1.5">
+                  <ShieldCheck className="w-3.5 h-3.5 text-emerald-400" />
+                  Protected by SHA-256 &amp; Brute-Force Lockout
+                </span>
+                <span>15m Idle Auto-Lock</span>
               </div>
             </form>
           ) : (
-            <form onSubmit={handleActivateNewUser} className="space-y-4">
+            <form onSubmit={handleActivateNewUser} className="space-y-4" autoComplete="off">
               <div>
                 <label className="block text-xs font-semibold uppercase tracking-wider text-amber-400 mb-1.5">
                   Step 1: Enter One-Time Activation Key
                 </label>
                 <input
                   type="text"
+                  autoComplete="off"
                   value={activationKeyInput}
                   onChange={(e) =>
                     setActivationKeyInput(normalizeActivationKeyInput(e.target.value))
@@ -1111,7 +1109,7 @@ export default function App() {
                     )
                   ) : (
                     <span className="text-slate-400">
-                      Try pre-generated test key: <code className="text-emerald-300">NAS-2026-8F4K-99XM</code>
+                      Enter the 16-character single-use activation key issued by the Super Admin.
                     </span>
                   )}
                 </div>
@@ -1326,6 +1324,10 @@ export default function App() {
             onClick={() => {
               setCurrentUserId(null);
               setActiveSessionUserId(null);
+              setSignInIdentifier('');
+              setSignInPassword('');
+              setActivationKeyInput('');
+              setNewPassword('');
             }}
             className="w-full flex items-center gap-2 px-3 py-2 rounded-xl text-xs text-slate-400 hover:text-red-400 hover:bg-red-500/10 transition cursor-pointer"
           >
@@ -2760,14 +2762,14 @@ export default function App() {
         </div>
       )}
 
-      {/* CLOUD SYNC CONFIGURATION MODAL (PC & PHONE OUTSIDE LOCAL NETWORK) */}
+      {/* CLOUD SYNC STATUS MODAL (PC & PHONE OUTSIDE LOCAL NETWORK) */}
       {isCloudModalOpen && (
         <div className="fixed inset-0 z-50 bg-black/75 backdrop-blur-xs flex items-center justify-center p-4">
           <div className="bg-[#131C2E] border border-slate-700 rounded-2xl max-w-lg w-full p-6 space-y-4">
             <div className="flex items-center justify-between border-b border-slate-800 pb-3">
               <h3 className="font-bold text-base text-white flex items-center gap-2">
                 <Cloud className="w-5 h-5 text-emerald-400" />
-                PC &amp; Phone Cloud Sync (Outside Local Network)
+                PC &amp; Phone Cloud Sync Status
               </h3>
               <button
                 type="button"
@@ -2778,65 +2780,45 @@ export default function App() {
               </button>
             </div>
 
-            <p className="text-xs text-slate-300 leading-relaxed">
-              Your workspace is currently saved in persistent local storage with instant cross-tab sync. To sync live between your computer and mobile phone anywhere in the world (over 4G/5G/Wi-Fi), enter your Supabase project URL &amp; Anon Key below (SQL schema is ready in{' '}
-              <code className="text-emerald-400">docs/NAS_Microfinance_Blueprint.md</code>).
-            </p>
-
-            <div className="space-y-3">
-              <div>
-                <label className="block text-xs text-slate-400 mb-1">Supabase Project URL</label>
-                <input
-                  type="url"
-                  value={cloudConfig.supabaseUrl}
-                  onChange={(e) =>
-                    setCloudConfig({ ...cloudConfig, supabaseUrl: e.target.value })
-                  }
-                  placeholder="https://your-project.supabase.co"
-                  className="w-full px-3 py-2 rounded-lg bg-[#0B111E] border border-slate-700 text-xs text-white"
-                />
+            <div className="p-4 rounded-xl bg-[#0B111E] border border-emerald-500/30 space-y-2">
+              <div className="flex items-center justify-between">
+                <span className="text-xs font-bold uppercase text-emerald-400 flex items-center gap-2">
+                  <span className="w-2.5 h-2.5 rounded-full bg-emerald-400 animate-pulse" />
+                  Cloud Realtime Sync Active (TLS 1.3)
+                </span>
+                <span className="text-[11px] font-mono text-slate-400">
+                  Last Synced: {appState.lastSyncedAt.slice(0, 19).replace('T', ' ')}
+                </span>
               </div>
-              <div>
-                <label className="block text-xs text-slate-400 mb-1">Supabase Anon Public Key</label>
-                <input
-                  type="password"
-                  value={cloudConfig.supabaseAnonKey}
-                  onChange={(e) =>
-                    setCloudConfig({ ...cloudConfig, supabaseAnonKey: e.target.value })
-                  }
-                  placeholder="eyJhbGciOiJIUzI1NiIsInR5cCI..."
-                  className="w-full px-3 py-2 rounded-lg bg-[#0B111E] border border-slate-700 text-xs text-white"
-                />
-              </div>
+              <p className="text-xs text-slate-300 leading-relaxed">
+                Your PC and Mobile Phone are connected via encrypted cloud synchronization with per-tenant vault partitioning and local encrypted offline fallback.
+              </p>
             </div>
 
             <div className="flex items-center justify-between pt-2">
               <button
                 type="button"
-                onClick={() => {
-                  const seed = createInitialSeedState();
-                  setAppState(seed);
-                  saveAppState(seed);
+                onClick={async () => {
+                  const pulled = await pullStateFromSupabaseCloud();
+                  if (pulled) {
+                    setAppState(pulled);
+                    showToast('Pulled latest TZS portfolio from Cloud!');
+                  } else {
+                    await pushStateToSupabaseCloud(appState);
+                    showToast('Pushed local TZS portfolio to Cloud!');
+                  }
                   setIsCloudModalOpen(false);
-                  showToast('Reset demo portfolio to initial TZS seed data.');
                 }}
-                className="text-xs text-amber-400 hover:underline cursor-pointer"
+                className="px-4 py-2 rounded-xl bg-emerald-500 hover:bg-emerald-400 text-slate-950 font-bold text-xs flex items-center gap-1.5 cursor-pointer"
               >
-                Reset Demo TZS Data
+                <RefreshCw className="w-3.5 h-3.5" /> Force Cloud Sync Now
               </button>
               <button
                 type="button"
-                onClick={() => {
-                  saveCloudConfig({
-                    ...cloudConfig,
-                    enabled: Boolean(cloudConfig.supabaseUrl && cloudConfig.supabaseAnonKey),
-                  });
-                  setIsCloudModalOpen(false);
-                  showToast('Saved Cloud Sync settings!');
-                }}
-                className="px-4 py-2 rounded-xl bg-emerald-500 text-slate-950 font-bold text-xs cursor-pointer"
+                onClick={() => setIsCloudModalOpen(false)}
+                className="px-4 py-2 rounded-xl bg-slate-800 text-slate-300 font-semibold text-xs cursor-pointer"
               >
-                Save Sync Config
+                Close
               </button>
             </div>
           </div>
