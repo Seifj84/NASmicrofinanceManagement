@@ -2009,7 +2009,7 @@ export default function App() {
                             )}
                           </td>
                           <td className="py-3.5 px-4 text-right space-x-2">
-                            {k.status === 'UNUSED' && (
+                            {k.status === 'UNUSED' ? (
                               <>
                                 <button
                                   type="button"
@@ -2037,10 +2037,151 @@ export default function App() {
                                   Revoke
                                 </button>
                               </>
+                            ) : (
+                              <button
+                                type="button"
+                                onClick={() => {
+                                  const next = {
+                                    ...appState,
+                                    activationKeys: appState.activationKeys.filter(
+                                      (item) => item.id !== k.id
+                                    ),
+                                  };
+                                  setAppState(next);
+                                  saveAppState(next);
+                                  showToast(`Removed key ${k.keyCode} from log`);
+                                }}
+                                className="px-2.5 py-1 rounded-lg bg-slate-800 hover:bg-red-500/20 text-slate-400 hover:text-red-300 text-xs cursor-pointer"
+                              >
+                                Delete Log
+                              </button>
                             )}
                           </td>
                         </tr>
                       ))}
+                    </tbody>
+                  </table>
+                </div>
+              </div>
+
+              {/* Registered Users / Licensed Lenders Table */}
+              <div className="bg-[#131C2E] border border-slate-800 rounded-2xl overflow-hidden">
+                <div className="px-5 py-4 border-b border-slate-800 flex items-center justify-between">
+                  <div>
+                    <h3 className="font-bold text-sm text-white">
+                      Registered Users &amp; Licensed Accounts ({appState.users.length})
+                    </h3>
+                    <p className="text-xs text-slate-400">
+                      Manage all users who have activated an account on the platform.
+                    </p>
+                  </div>
+                </div>
+                <div className="overflow-x-auto">
+                  <table className="w-full text-left border-collapse text-sm">
+                    <thead>
+                      <tr className="border-b border-slate-800 text-[11px] font-bold uppercase text-slate-400 bg-[#0F172A]">
+                        <th className="py-3 px-4">Business / User Name</th>
+                        <th className="py-3 px-4">Email / Phone</th>
+                        <th className="py-3 px-4">Role &amp; Activated Key</th>
+                        <th className="py-3 px-4">Account Status</th>
+                        <th className="py-3 px-4 text-right">Admin Actions</th>
+                      </tr>
+                    </thead>
+                    <tbody className="divide-y divide-slate-800/70">
+                      {appState.users.map((u) => {
+                        const uLoansCount = appState.loans.filter((l) => l.userId === u.id).length;
+                        return (
+                          <tr key={u.id} className="hover:bg-slate-800/30">
+                            <td className="py-3.5 px-4">
+                              <div className="font-bold text-white">{u.businessName}</div>
+                              <div className="text-xs text-slate-400">
+                                {uLoansCount} Loans • Created {u.createdAt}
+                              </div>
+                            </td>
+                            <td className="py-3.5 px-4 font-mono text-xs text-slate-200">
+                              {u.emailOrPhone}
+                            </td>
+                            <td className="py-3.5 px-4 text-xs">
+                              <span className="font-semibold text-emerald-400">{u.role}</span>
+                              {u.activatedWithKey && (
+                                <div className="font-mono text-slate-400">
+                                  Key: {u.activatedWithKey}
+                                </div>
+                              )}
+                            </td>
+                            <td className="py-3.5 px-4">
+                              {u.accountStatus === 'ACTIVE' ? (
+                                <span className="px-2.5 py-1 rounded-full text-xs font-bold bg-emerald-500/20 text-emerald-300 border border-emerald-500/40">
+                                  🟢 ACTIVE
+                                </span>
+                              ) : (
+                                <span className="px-2.5 py-1 rounded-full text-xs font-bold bg-red-500/20 text-red-300 border border-red-500/40">
+                                  🔴 {u.accountStatus}
+                                </span>
+                              )}
+                            </td>
+                            <td className="py-3.5 px-4 text-right space-x-2">
+                              {u.role !== 'SUPER_ADMIN' ? (
+                                <>
+                                  <button
+                                    type="button"
+                                    onClick={() => {
+                                      const nextStatus =
+                                        u.accountStatus === 'ACTIVE' ? 'SUSPENDED' : 'ACTIVE';
+                                      const next = {
+                                        ...appState,
+                                        users: appState.users.map((item) =>
+                                          item.id === u.id
+                                            ? { ...item, accountStatus: nextStatus as 'ACTIVE' | 'SUSPENDED' }
+                                            : item
+                                        ),
+                                      };
+                                      setAppState(next);
+                                      saveAppState(next);
+                                      showToast(
+                                        `${u.businessName} is now ${nextStatus}`
+                                      );
+                                    }}
+                                    className="px-2.5 py-1 rounded-lg bg-amber-500/20 text-amber-300 text-xs font-semibold cursor-pointer"
+                                  >
+                                    {u.accountStatus === 'ACTIVE' ? 'Suspend' : 'Activate'}
+                                  </button>
+                                  <button
+                                    type="button"
+                                    onClick={() => {
+                                      if (
+                                        window.confirm(
+                                          `Delete user "${u.businessName}" (${u.emailOrPhone}) and their data?`
+                                        )
+                                      ) {
+                                        const next = {
+                                          ...appState,
+                                          users: appState.users.filter((item) => item.id !== u.id),
+                                          borrowers: appState.borrowers.filter(
+                                            (b) => b.userId !== u.id
+                                          ),
+                                          loans: appState.loans.filter((l) => l.userId !== u.id),
+                                          repayments: appState.repayments.filter(
+                                            (r) => r.userId !== u.id
+                                          ),
+                                        };
+                                        setAppState(next);
+                                        saveAppState(next);
+                                        showToast(`Deleted user ${u.businessName}`);
+                                      }
+                                    }}
+                                    className="px-2.5 py-1 rounded-lg bg-red-500/20 text-red-300 text-xs font-semibold cursor-pointer"
+                                  >
+                                    Delete User
+                                  </button>
+                                </>
+                              ) : (
+                                <span className="text-xs text-slate-500">Master Admin</span>
+                              )}
+                            </td>
+                          </tr>
+                        );
+                      })}
                     </tbody>
                   </table>
                 </div>
