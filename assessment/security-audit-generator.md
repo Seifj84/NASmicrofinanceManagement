@@ -1,0 +1,330 @@
+---
+name: security-audit-generator
+category: security
+version: 1.1.1
+updated: 2026-08-28
+description: Comprehensive security audit with OWASP-based checks and prioritized remediation.
+platforms: [chatgpt, claude, gemini, copilot-chat]
+---
+
+# Security Audit Generator
+
+## **Objective**
+
+Perform a comprehensive security audit of the current project, identifying vulnerabilities, security misconfigurations, and compliance gaps with actionable remediation steps.
+
+---
+
+## **Assessment Scope**
+
+### 1. **Project Discovery**
+
+* Detect language, framework, APIs and external integrations; catalog dependencies
+* Map authentication/authorization, data storage, sensitive data handling, and deployment architecture
+
+### 2. **Security Standards**
+
+Apply appropriate security standards based on project type:
+
+| Project Type | Primary Standards | Key Focus Areas |
+|-------------|------------------|-----------------|
+| **Web Applications** | OWASP Top 10 (2025 edition), CSP | XSS, CSRF, injection, supply chain, session management |
+| **APIs** | OWASP API Security | Authentication, rate limiting, input validation |
+| **Mobile Apps** | OWASP Mobile | Data storage, network security, code obfuscation |
+| **Cloud Services** | CIS Benchmarks | IAM, encryption, network security, logging |
+| **Containers** | CIS Docker/K8s | Image security, runtime protection, secrets |
+
+---
+
+## **Security Audit Areas**
+
+### 🔐 **Authentication & Authorization**
+
+**Check for**: weak password policies, missing MFA, insecure session and token handling, improper access controls and privilege escalation risks, hard-coded credentials, OAuth/SAML misconfigurations, JWT weaknesses (weak signing, no expiration)
+
+**Scan**:
+```bash
+# Prefer a real scanner: gitleaks (git = commit history, dir = working tree)
+gitleaks git . -v
+gitleaks dir . -v
+
+# Keyword fallback: search ALL files (an extension whitelist misses
+# Dockerfiles, Makefiles and CI YAML); bash brace expansion
+grep -rnI "password\|secret\|api_key\|token" \
+  --exclude-dir={node_modules,.git,dist,build,vendor} .
+```
+
+### 🛡️ **Input Validation & Injection**
+
+**Check for**:
+- SQL injection vulnerabilities (raw queries, string concatenation)
+- Command injection risks (shell execution, eval)
+- Path traversal vulnerabilities
+- XML/XXE injection
+- LDAP/NoSQL injection
+- Server-Side Request Forgery (SSRF)
+- Deserialization vulnerabilities
+
+**Validate**: all inputs sanitized and validated, parameterized queries used, ORM properly configured, file uploads restricted (type, size, location)
+
+### 🌐 **Web Security Headers**
+
+**Required headers** (per the OWASP HTTP Headers Cheat Sheet):
+```
+Content-Security-Policy: default-src 'self'
+X-Frame-Options: DENY
+X-Content-Type-Options: nosniff
+Strict-Transport-Security: max-age=31536000; includeSubDomains
+Referrer-Policy: strict-origin-when-cross-origin
+Permissions-Policy: geolocation=(), microphone=()
+Cross-Origin-Opener-Policy: same-origin
+Cross-Origin-Embedder-Policy: require-corp
+Cross-Origin-Resource-Policy: same-site
+```
+Do NOT set `X-XSS-Protection` (deprecated; the XSS Auditor it controlled could CREATE vulnerabilities). If a legacy scanner demands it, send `X-XSS-Protection: 0`.
+
+### 🔒 **Data Protection**
+
+**Check for**:
+- Sensitive data transmitted without encryption (use HTTPS everywhere)
+- Weak encryption algorithms (MD5, SHA1, DES)
+- Insecure data storage (plaintext passwords, unencrypted databases)
+- Missing encryption at rest for sensitive data
+- Insufficient logging and monitoring of data access
+- Personal Identifiable Information (PII) exposure
+- Missing data retention and deletion policies
+
+**Compliance checks**: GDPR (erasure, portability, consent), HIPAA (PHI encryption, access logs, audit trails), PCI-DSS (card data handling, network segmentation)
+
+### 📦 **Dependencies & Supply Chain**
+
+**Audit**:
+- Known vulnerabilities in dependencies (CVEs)
+- Outdated packages with security patches available
+- Deprecated or unmaintained libraries
+- Excessive permissions in dependencies
+- Typosquatting risks in package names
+- Missing Software Bill of Materials (SBOM)
+
+**Tools to use**:
+```bash
+# Node.js
+npm audit --omit=dev
+npm outdated
+
+# Python
+pip-audit
+safety scan
+
+# Java
+mvn dependency-check:check
+
+# Go
+go list -json -m all | nancy sleuth
+
+# Rust
+cargo audit
+```
+
+### ⚙️ **Configuration & Secrets**
+
+**Check for**: debug mode in production, verbose errors exposing internals, unchanged default credentials, secrets in version control, wildcard CORS origins, missing rate limiting, exposed admin/debug endpoints, unnecessary services or ports
+
+**Best practices**: environment variables or secret managers (Vault, AWS Secrets Manager); .gitignore for sensitive files; regular rotation; least privilege
+
+### 🐳 **Container & Infrastructure**
+
+**Check for**:
+- Running containers as root user
+- Using outdated or vulnerable base images
+- Exposed Docker daemon or Kubernetes API
+- Missing network policies and segmentation
+- Secrets in Dockerfiles or environment variables
+- Insufficient resource limits (CPU, memory)
+- Missing security scanning in CI/CD pipeline
+
+**Best practices**:
+- Use minimal base images (Alpine, distroless)
+- Scan images with Trivy, Clair, or Snyk
+- Implement pod security policies
+- Use secrets management (Kubernetes secrets, sealed secrets)
+
+### 🔍 **Code Security Patterns**
+
+**Scan for dangerous patterns**:
+```python
+# Python
+eval(), exec(), compile()
+pickle.loads() # Deserialization
+os.system(), subprocess with shell=True
+
+# JavaScript
+eval(), Function constructor
+innerHTML without sanitization
+document.write() with user input
+
+# Java
+Runtime.exec()
+ObjectInputStream deserialization
+SQL string concatenation
+```
+
+**Static Analysis Tools**:
+- **Python**: bandit, safety
+- **JavaScript**: ESLint security plugins, npm audit
+- **Java**: SpotBugs, FindSecBugs
+- **Go**: gosec
+- **Rust**: cargo-audit
+- **Multi-language**: SonarQube, Semgrep
+
+---
+
+## **Vulnerability Scanning**
+
+### **Automated Scans**
+
+Save as `scan.sh` and run it; do NOT paste into an interactive shell (the final `exit` would close it):
+
+```bash
+#!/usr/bin/env bash
+# EVERY scanner exits non-zero on findings; capture each status and fail
+# at the end, or the first finding masks all later scans (fatal under set -e).
+status=0
+trivy image your-image:tag --severity HIGH,CRITICAL || status=1  # containers
+snyk test --severity-threshold=high || status=1                  # dependencies
+semgrep --config=auto || status=1                                # SAST
+gitleaks git . -v || status=1   # secrets: full commit history
+gitleaks dir . -v || status=1   # secrets: working tree
+checkov -d . || status=1        # infrastructure as code
+tfsec . || status=1
+exit "$status"
+```
+
+### **Manual Testing Checklist**
+
+- [ ] Test authentication bypass attempts
+- [ ] Verify authorization on all endpoints
+- [ ] Test input validation with malicious payloads
+- [ ] Check for CSRF protection on state-changing operations
+- [ ] Verify session timeout and logout functionality
+- [ ] Test file upload for malicious content
+- [ ] Attempt privilege escalation
+- [ ] Test API rate limiting and throttling
+- [ ] Verify error handling doesn't leak information
+
+---
+
+## **Deliverables**
+
+Generate the following:
+
+1. **Security Audit Report**:
+   * Executive summary with risk scores
+   * Detailed vulnerability findings categorized by severity
+   * CVSS scores for each vulnerability
+   * Affected components and attack vectors
+   * Exploitability assessment
+
+2. **Remediation Plan**:
+   * Prioritized action items (Critical → High → Medium → Low)
+   * Specific fix recommendations with code examples
+   * Estimated effort and timeline for each fix
+   * Quick wins vs. long-term improvements
+
+3. **Security Tooling Setup**:
+   * Pre-commit hooks for secret scanning
+   * CI/CD security scanning integration
+   * Dependency update automation
+   * Security monitoring and alerting
+
+4. **Compliance Checklist**:
+   * OWASP Top 10 compliance status
+   * Industry-specific compliance (GDPR, HIPAA, PCI-DSS)
+   * Gap analysis and recommendations
+
+5. **Security Documentation**:
+   * Security policies and procedures
+   * Incident response plan
+   * Secure coding guidelines
+   * Security testing procedures
+
+### **Documentation Updates**
+All security audit findings and remediation plans must be documented in `/docs/`:
+
+- **`/docs/SECURITY_AND_PRIVACY.md`**: Add discovered vulnerabilities, security policies, data handling procedures, incident response plan, and compliance status
+- **`/docs/IMPROVEMENT_AREAS.md`**: Document security technical debt, vulnerabilities requiring long-term fixes, and security enhancement opportunities
+- **`/docs/REFACTORING_PLAN.md`**: Add security remediation tasks with priority, effort estimates, and dependencies
+- **`/docs/TESTING_AND_RELIABILITY.md`**: Include security testing procedures, vulnerability scanning setup, and security quality gates
+
+---
+
+## **Risk Scoring**
+
+Score with CVSS v4.0 (v3.1 acceptable where tooling requires it; state which is used):
+
+| Severity | CVSS Score | Response Time | Examples |
+|----------|-----------|---------------|----------|
+| **Critical** | 9.0-10.0 | Immediate | RCE, authentication bypass, data breach |
+| **High** | 7.0-8.9 | 24-48 hours | Privilege escalation, SQL injection |
+| **Medium** | 4.0-6.9 | 1-2 weeks | XSS, CSRF, weak encryption |
+| **Low** | 0.1-3.9 | Next sprint | Information disclosure, missing headers |
+
+---
+
+## **Success Criteria**
+
+- [ ] All critical and high vulnerabilities identified and documented
+- [ ] Remediation plan with specific, actionable steps and timelines
+- [ ] Security scanning integrated into CI/CD pipeline
+- [ ] No secrets or credentials in version control
+- [ ] Dependencies updated to patched versions (CVEs resolved)
+- [ ] Security headers properly configured and tested
+- [ ] Automated security testing in place (pre-commit and CI/CD)
+- [ ] Compliance requirements met (OWASP, GDPR, etc.)
+- [ ] Incident response plan documented and tested
+- [ ] **`/docs/` files updated** with security findings and procedures
+
+---
+
+## **Best Practices**
+
+### **Preventive Measures**
+
+* Shift-left: security from the start, linters and automated scanning in CI
+* Regular dependency updates and patch management; security-focused code review
+* Security training for the team; threat modeling for new features
+
+### **Continuous Security**
+
+* Quarterly audits; monitor dependency advisories; maintain a security changelog
+* Incident response procedures; penetration testing before major releases; bug bounty for external research
+
+---
+
+## **Usage Instructions**
+
+### **When to Run This Audit**
+
+* New project baseline; before production deployment or major releases
+* After security incidents, breach attempts, or major dependency updates
+* Quarterly review cycles and compliance audits
+* When adding authentication, payment processing, or new integrations
+
+### **Initial Setup**
+1. Examine existing `/docs/SECURITY_AND_PRIVACY.md` if it exists
+2. Ensure security scanning and dependency management tools are available (or will be recommended)
+
+### **Execution**
+```
+I need a comprehensive security audit for my [PROJECT_TYPE].
+
+Project type: [web app/API/mobile app/cloud service/etc.]
+Technology stack: [Node.js, Python, Java, etc.]
+Authentication: [OAuth, JWT, session-based, none]
+Data sensitivity: [PII, financial, healthcare, public]
+Compliance requirements: [GDPR, HIPAA, PCI-DSS, SOC2, none]
+Current security measures: [describe existing security if any]
+```
+
+### **Expected Outcome**
+The AI will perform a comprehensive security analysis using OWASP Top 10 and industry best practices, scan for vulnerabilities in code and dependencies, check for security misconfigurations, analyze authentication and authorization mechanisms, generate a detailed security audit report with CVSS-scored vulnerabilities, provide a prioritized remediation plan with specific fix recommendations, set up automated security scanning in CI/CD, and document all findings and procedures in `/docs/` files. You'll receive a complete security assessment with actionable steps to improve your security posture.
