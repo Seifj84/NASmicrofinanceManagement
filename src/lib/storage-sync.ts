@@ -156,7 +156,7 @@ export function createInitialSeedState(): AppStateData {
       interestRatePercent: 20,
       durationDays: 30,
       issueDate: addDaysToDate(today, -32),
-      dueDate: addDaysToDate(today, -2), // 2 days overdue!
+      dueDate: addDaysToDate(today, -2),
       overdueRule: 'SIMPLE_ROLLOVER',
       dailyPenaltyPercent: 1,
       gracePeriodDays: 0,
@@ -200,7 +200,7 @@ export function createInitialSeedState(): AppStateData {
       interestRatePercent: 20,
       durationDays: 30,
       issueDate: addDaysToDate(today, -28),
-      dueDate: addDaysToDate(today, 2), // Due in 2 days (DUE_SOON)
+      dueDate: addDaysToDate(today, 2),
       overdueRule: 'SIMPLE_ROLLOVER',
       dailyPenaltyPercent: 1,
       gracePeriodDays: 0,
@@ -237,7 +237,7 @@ export function createInitialSeedState(): AppStateData {
       interestRatePercent: 20,
       durationDays: 30,
       issueDate: addDaysToDate(today, -12),
-      dueDate: addDaysToDate(today, 18), // Active, 18 days left
+      dueDate: addDaysToDate(today, 18),
       overdueRule: 'COMPOUND_ROLLOVER',
       dailyPenaltyPercent: 1,
       gracePeriodDays: 0,
@@ -273,7 +273,7 @@ export function createInitialSeedState(): AppStateData {
       gracePeriodDays: 0,
       manualPenaltyAmount: 0,
       waivedPenaltyAmount: 0,
-      amountPaid: 960000, // Fully paid!
+      amountPaid: 960000,
       notes: 'Cleared on time in full.',
       auditLog: [
         {
@@ -356,12 +356,13 @@ export function saveAppState(state: AppStateData): void {
     lastSyncedAt: new Date().toISOString(),
   };
   localStorage.setItem(STORAGE_KEY, JSON.stringify(updated));
-  // Broadcast across open browser tabs / windows on the same device
   if (typeof window !== 'undefined' && 'BroadcastChannel' in window) {
     const bc = new BroadcastChannel('nas_microfinance_sync');
     bc.postMessage({ type: 'STATE_UPDATED', payload: updated });
     bc.close();
   }
+  // Also push to Supabase Cloud asynchronously if configured
+  void pushStateToSupabaseCloud(updated);
 }
 
 export function getActiveSessionUserId(): string | null {
@@ -377,16 +378,21 @@ export function setActiveSessionUserId(userId: string | null): void {
 }
 
 export function loadCloudConfig(): CloudSyncConfig {
+  const envUrl = import.meta.env.VITE_SUPABASE_URL || '';
+  const envKey = import.meta.env.VITE_SUPABASE_ANON_KEY || '';
   try {
     const raw = localStorage.getItem(CLOUD_CONFIG_KEY);
-    if (raw) return JSON.parse(raw);
+    if (raw) {
+      const parsed = JSON.parse(raw) as CloudSyncConfig;
+      if (parsed.supabaseUrl && parsed.supabaseAnonKey) return parsed;
+    }
   } catch {
     // ignore
   }
   return {
-    supabaseUrl: import.meta.env.VITE_SUPABASE_URL || '',
-    supabaseAnonKey: import.meta.env.VITE_SUPABASE_ANON_KEY || '',
-    enabled: Boolean(import.meta.env.VITE_SUPABASE_URL && import.meta.env.VITE_SUPABASE_ANON_KEY),
+    supabaseUrl: envUrl,
+    supabaseAnonKey: envKey,
+    enabled: Boolean(envUrl && envKey),
   };
 }
 
@@ -394,10 +400,48 @@ export function saveCloudConfig(cfg: CloudSyncConfig): void {
   localStorage.setItem(CLOUD_CONFIG_KEY, JSON.stringify(cfg));
 }
 
-export function createSupabaseClientIfConfigured(cfg: CloudSyncConfig): SupabaseClient | null {
-  if (!cfg.enabled || !cfg.supabaseUrl || !cfg.supabaseAnonKey) return null;
+export function createSupabaseClientIfConfigured(cfg?: CloudSyncConfig): SupabaseClient | null {
+  const activeCfg = cfg || loadCloudConfig();
+  if (!activeCfg.enabled || !activeCfg.supabaseUrl || !activeCfg.supabaseAnonKey) return null;
   try {
-    return createClient(cfg.supabaseUrl, cfg.supabaseAnonKey);
+    return createClient(activeCfg.supabaseUrl, activeCfg.supabaseAnonKey);
+  } catch {
+    return null;
+  }
+}
+
+export async function pushStateToSupabaseCloud(state: AppStateData): Promise<boolean> {
+  const client = createSupabaseClientIfConfigured();
+  if (!client) return false;
+  try {
+    const { error } = await client.from('nas_cloud_state').upsert(
+      {
+        id: 'global_workspace',
+        payload: state,
+        updated_at: new Date().toISOString(),
+      },
+      { onConflict: 'id' }
+    );
+    return !error;
+  } catch {
+    return false;
+  }
+}
+
+export async function pullStateFromSupabaseCloud(): Promise<AppStateData | null> {
+  const client = createSupabaseClientIfConfigured();
+  if (!client) return null;
+  try {
+    const { data, error } = await client
+      .from('nas_cloud_state')
+      .select('payload')
+      .eq('id', 'global_workspace')
+      .maybeSingle();
+
+    if (error || !data?.payload) return null;
+    const remoteState = data.payload as AppStateData;
+    localStorage.setItem(STORAGE_KEY, JSON.stringify(remoteState));
+    return remoteState;
   } catch {
     return null;
   }

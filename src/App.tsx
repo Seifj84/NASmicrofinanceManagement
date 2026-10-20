@@ -43,10 +43,13 @@ import {
   AppStateData,
   CloudSyncConfig,
   createInitialSeedState,
+  createSupabaseClientIfConfigured,
   getActiveSessionUserId,
   getTodayIso,
   loadAppState,
   loadCloudConfig,
+  pullStateFromSupabaseCloud,
+  pushStateToSupabaseCloud,
   saveAppState,
   saveCloudConfig,
   setActiveSessionUserId,
@@ -129,7 +132,7 @@ export default function App() {
     }, 3800);
   };
 
-  // Listen to cross-tab BroadcastChannel updates
+  // Listen to cross-tab BroadcastChannel updates & Supabase Cloud Realtime Sync
   useEffect(() => {
     if (typeof window === 'undefined' || !('BroadcastChannel' in window)) return;
     const bc = new BroadcastChannel('nas_microfinance_sync');
@@ -140,6 +143,38 @@ export default function App() {
     };
     return () => bc.close();
   }, []);
+
+  useEffect(() => {
+    const client = createSupabaseClientIfConfigured(cloudConfig);
+    if (!client) return;
+
+    // Initial cloud pull (or seed cloud if empty)
+    pullStateFromSupabaseCloud().then((remote) => {
+      if (remote) {
+        setAppState(remote);
+      } else {
+        void pushStateToSupabaseCloud(appState);
+      }
+    });
+
+    const channel = client
+      .channel('nas_cloud_realtime')
+      .on(
+        'postgres_changes',
+        { event: '*', schema: 'public', table: 'nas_cloud_state' },
+        (payload) => {
+          const next = (payload.new as { payload?: AppStateData })?.payload;
+          if (next && next.lastSyncedAt) {
+            setAppState(next);
+          }
+        }
+      )
+      .subscribe();
+
+    return () => {
+      void client.removeChannel(channel);
+    };
+  }, [cloudConfig.enabled, cloudConfig.supabaseUrl, cloudConfig.supabaseAnonKey]);
 
   const currentUser = useMemo(
     () => appState.users.find((u) => u.id === currentUserId) || null,
