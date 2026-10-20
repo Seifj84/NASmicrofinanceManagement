@@ -334,6 +334,17 @@
         "Global desktop keyboard shortcuts (N, P, R, W, D, L, B, K, O, Ctrl+K, Esc) and mobile touch gestures",
         "Shareable TZS PDF/PNG Receipt generator showing Client, Referral, and Loan breakdown"
       ]
+    },
+    {
+      "phase": 6,
+      "name": "Stage 2 Production Hardening & Live Operations (v1.2.0)",
+      "deliverables": [
+        "Upgrade 1: Front-door authentication lock + in-app Admin/Lender Email, Phone & Password changer",
+        "Upgrade 2: One-click 'Clear Sample Data (Start Fresh at TZS 0)' portfolio reset",
+        "Upgrade 3: Full Edit & Delete controls for Clients, Mandatory Referrals, and TZS Loans",
+        "Upgrade 4: Branded 192x192 & 512x512 PWA Icons, Service Worker, and in-app 'Install App' button",
+        "Upgrade 5: One-click 'Export TZS Portfolio to Excel (CSV)' backup generator"
+      ]
     }
   ]
 }

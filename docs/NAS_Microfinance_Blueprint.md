@@ -1,8 +1,9 @@
 # NAS Microfinance Management System
 ## Complete Product Specification, UI/UX Appearance Mockups, Interaction Matrix & Step-by-Step Implementation Blueprint
 
-- **Document Version:** 1.1.0 (Updated with **TZS Currency** & **Mandatory Client Referral / Guarantor Tracking**)
+- **Document Version:** 1.2.0 (Updated with **TZS Currency**, **Mandatory Client Referral Tracking** & **Stage 2 Production Hardening Plan**)
 - **Date:** October 20, 2026
+- **Live Production URL:** https://na-smicrofinance-management.vercel.app/
 - **Primary Currency:** Tanzanian Shilling (**TZS**)
 - **Platform Architecture:** Cross-Platform Installable Progressive Web App (PWA) — Windows/Mac Desktop & iOS/Android Mobile
 - **Sync Architecture:** Real-Time Cloud Sync (Outside Local Network via HTTPS/WSS) + Local IndexedDB Offline Queue
@@ -541,3 +542,28 @@ CREATE POLICY "Users manage only their own repayments"
 3. **Phase 3 — Activation Key & Multi-User Auth System:** Build the Login/Activation Key onboarding flow (with atomic single-use key burn) and the Super Admin Key Generator panel.
 4. **Phase 4 — Executive TZS Dashboard, Loan + Referral Modal & Repayment Drawer:** Implement all 6 screens with mandatory Referral fields, Tanzanian Mobile Money methods (`M-Pesa`, `Tigo Pesa`, `Airtel Money`, `HaloPesa`, `Cash`), and 1-tap Client/Referral WhatsApp reminders (English & Swahili templates).
 5. **Phase 5 — Cloud Sync, Global Keyboard Shortcuts & Verification:** Wire up real-time cross-network cloud synchronization, global desktop shortcuts (`N`, `P`, `R`, `W`, `O`, `Ctrl+K`, etc.), and end-to-end verification.
+
+---
+
+## 10. Stage 2: Production Hardening & Live Operations Blueprint (v1.2.0)
+
+Following live verification on **https://na-smicrofinance-management.vercel.app/** and **Supabase Cloud (`bmvltojicwzqzysdpbwn.supabase.co`)**, Stage 2 locks in 5 production-grade upgrades for live lending operations:
+
+### Upgrade 1: Front-Door Authentication Lock & Admin Credential Manager
+- **Behavior:** Unauthenticated visitors arriving at `https://na-smicrofinance-management.vercel.app/` land strictly on **Screen 1 (Sign In / Activate New Account)** rather than auto-entering the Super Admin demo session.
+- **Security Controls:** Inside the workspace (**Account & Security Settings**), the Super Admin and any licensed lender can update their **Business Name**, **Login Email/Phone**, and **Password** at any time, immediately syncing to Supabase Cloud.
+
+### Upgrade 2: One-Click "Clear Sample Data (Start Fresh at TZS 0)"
+- **Behavior:** Provides a protected action in the **Cloud Sync & Portfolio Reset Modal** allowing the Super Admin to wipe the 4 pre-loaded demo clients/loans and start their real portfolio at **TZS 0**, while preserving all user accounts and activation keys.
+
+### Upgrade 3: Full CRUD (Edit & Delete) for Clients, Referrals & Loans
+- **Edit Client & Referral Details:** Edit a client's Full Name, Phone (`+255...`), NIDA/ID, Collateral Notes, and their **Mandatory Referral / Guarantor** (Referral Name, Phone, Relationship, Location, Trust Score) from either the Clients Directory or the Loan Drawer.
+- **Edit & Delete Loan Records:** Modify Principal Offered (`TZS`), Interest `%`, Duration (`Days`), Issue/Due Date, Overdue `"Or Else"` Rule, or delete an erroneous loan entry with full audit logging.
+
+### Upgrade 4: Installable PWA App Icons (`192x192` & `512x512`), Service Worker & In-App Install Button
+- **Assets:** High-contrast emerald-and-navy `icon-192.png` and `icon-512.png` icons linked in `public/manifest.json` alongside `public/sw.js`.
+- **In-App Install Trigger:** Captures `beforeinstallprompt` on Android/Windows Chrome/Edge and provides guided 1-tap install instructions for iOS Safari so users can click **📲 Install App** directly inside the header/sidebar.
+
+### Upgrade 5: One-Click Excel / CSV Portfolio & Referral Backup (`📥 Export CSV`)
+- **Behavior:** Exports the entire TZS portfolio (Loan #, Client Name & Phone, NIDA, Mandatory Referral Name, Referral Phone, Relationship, Location, Principal TZS, Interest %, Base Profit, Overdue Rollover, Total Expected, Amount Paid, Remaining Balance, Realized Profit, Issue/Due Dates, and Status) as a UTF-8 Excel-ready `.csv` file.
+

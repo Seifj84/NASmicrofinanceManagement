@@ -23,7 +23,18 @@ import {
   Sparkles,
   UserCheck,
   Wallet,
+  Download,
+  Edit3,
+  Smartphone,
+  Settings,
 } from 'lucide-react';
+import {
+  AccountSecurityModal,
+  EditBorrowerModal,
+  EditLoanModal,
+  InstallPwaModal,
+  exportPortfolioToCSV,
+} from './components/Stage2Modals';
 import {
   ActivationKey,
   Borrower,
@@ -59,10 +70,9 @@ type NavTab = 'DASHBOARD' | 'LOANS' | 'BORROWERS' | 'CALCULATOR' | 'ADMIN_KEYS';
 
 export default function App() {
   const [appState, setAppState] = useState<AppStateData>(() => loadAppState());
-  const [currentUserId, setCurrentUserId] = useState<string | null>(() => {
-    const saved = getActiveSessionUserId();
-    return saved || 'user-super-admin';
-  });
+  const [currentUserId, setCurrentUserId] = useState<string | null>(() =>
+    getActiveSessionUserId()
+  );
 
   const [activeTab, setActiveTab] = useState<NavTab>('DASHBOARD');
   const [loanFilter, setLoanFilter] = useState<'ALL' | 'OVERDUE' | 'DUE_SOON' | 'ACTIVE' | 'PAID'>('ALL');
@@ -73,12 +83,18 @@ export default function App() {
   // Modals
   const [isNewLoanOpen, setIsNewLoanOpen] = useState(false);
   const [isCloudModalOpen, setIsCloudModalOpen] = useState(false);
+  const [isSecurityModalOpen, setIsSecurityModalOpen] = useState(false);
+  const [isInstallModalOpen, setIsInstallModalOpen] = useState(false);
+  const [editingBorrower, setEditingBorrower] = useState<Borrower | null>(null);
+  const [editingLoan, setEditingLoan] = useState<LoanRecord | null>(null);
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  const [deferredInstallPrompt, setDeferredInstallPrompt] = useState<any>(null);
   const [toastMessage, setToastMessage] = useState<string | null>(null);
 
   // Auth / Activation Screen state (when logged out)
   const [authMode, setAuthMode] = useState<'SIGN_IN' | 'ACTIVATE_KEY'>('SIGN_IN');
-  const [signInIdentifier, setSignInIdentifier] = useState('admin@nas.co.tz');
-  const [signInPassword, setSignInPassword] = useState('admin123');
+  const [signInIdentifier, setSignInIdentifier] = useState('');
+  const [signInPassword, setSignInPassword] = useState('');
   const [activationKeyInput, setActivationKeyInput] = useState('NAS-2026-8F4K-99XM');
   const [newBusinessName, setNewBusinessName] = useState('');
   const [newPhoneOrEmail, setNewPhoneOrEmail] = useState('');
@@ -131,6 +147,16 @@ export default function App() {
       setToastMessage((prev) => (prev === msg ? null : prev));
     }, 3800);
   };
+
+  // Listen to PWA beforeinstallprompt event
+  useEffect(() => {
+    const handler = (e: Event) => {
+      e.preventDefault();
+      setDeferredInstallPrompt(e);
+    };
+    window.addEventListener('beforeinstallprompt', handler);
+    return () => window.removeEventListener('beforeinstallprompt', handler);
+  }, []);
 
   // Listen to cross-tab BroadcastChannel updates & Supabase Cloud Realtime Sync
   useEffect(() => {
@@ -820,6 +846,82 @@ export default function App() {
     showToast(`Generated One-Time Activation Key: ${code}`);
   };
 
+  // Stage 2 Upgrade Handlers: Edit/Delete Borrower, Edit/Delete Loan, Update Profile, Clear Demo Data
+  const handleSaveEditedBorrower = (updated: Borrower) => {
+    const nextState: AppStateData = {
+      ...appState,
+      borrowers: appState.borrowers.map((b) => (b.id === updated.id ? updated : b)),
+    };
+    setAppState(nextState);
+    saveAppState(nextState);
+    setEditingBorrower(null);
+    showToast(`Updated client & referral details for ${updated.fullName}`);
+  };
+
+  const handleDeleteBorrower = (borrowerId: string) => {
+    const nextState: AppStateData = {
+      ...appState,
+      borrowers: appState.borrowers.filter((b) => b.id !== borrowerId),
+      loans: appState.loans.filter((l) => l.borrowerId !== borrowerId),
+    };
+    setAppState(nextState);
+    saveAppState(nextState);
+    setEditingBorrower(null);
+    setSelectedLoanId(null);
+    showToast('Deleted client and associated loans.');
+  };
+
+  const handleSaveEditedLoan = (updated: LoanRecord) => {
+    const nextState: AppStateData = {
+      ...appState,
+      loans: appState.loans.map((l) => (l.id === updated.id ? updated : l)),
+    };
+    setAppState(nextState);
+    saveAppState(nextState);
+    setEditingLoan(null);
+    showToast(`Updated Loan #${updated.loanNumber}`);
+  };
+
+  const handleDeleteLoan = (loanId: string) => {
+    const nextState: AppStateData = {
+      ...appState,
+      loans: appState.loans.filter((l) => l.id !== loanId),
+      repayments: appState.repayments.filter((r) => r.loanId !== loanId),
+    };
+    setAppState(nextState);
+    saveAppState(nextState);
+    setEditingLoan(null);
+    setSelectedLoanId(null);
+    showToast('Deleted loan record.');
+  };
+
+  const handleUpdateUserProfile = (updated: UserProfile) => {
+    const nextState: AppStateData = {
+      ...appState,
+      users: appState.users.map((u) => (u.id === updated.id ? updated : u)),
+    };
+    setAppState(nextState);
+    saveAppState(nextState);
+    setIsSecurityModalOpen(false);
+    showToast('Saved your login credentials & business profile!');
+  };
+
+  const handleClearDemoPortfolio = () => {
+    if (!currentUser) return;
+    const nextState: AppStateData = {
+      ...appState,
+      borrowers: appState.borrowers.filter((b) => b.userId !== currentUser.id),
+      loans: appState.loans.filter((l) => l.userId !== currentUser.id),
+      repayments: appState.repayments.filter((r) => r.userId !== currentUser.id),
+    };
+    setAppState(nextState);
+    saveAppState(nextState);
+    setIsSecurityModalOpen(false);
+    setIsCloudModalOpen(false);
+    setSelectedLoanId(null);
+    showToast('Cleared sample data! Your TZS portfolio is now fresh at TZS 0.');
+  };
+
   // ---------------------------------------------------------------------------
   // RENDER SCREEN 1: LOGIN & ONE-TIME ACTIVATION KEY ONBOARDING
   // ---------------------------------------------------------------------------
@@ -1140,6 +1242,28 @@ export default function App() {
         <div className="space-y-2 pt-4 border-t border-slate-800">
           <button
             type="button"
+            onClick={() => setIsInstallModalOpen(true)}
+            className="w-full flex items-center justify-between px-3 py-2 rounded-xl bg-emerald-500/10 hover:bg-emerald-500/20 text-xs text-emerald-300 border border-emerald-500/30 cursor-pointer"
+          >
+            <span className="flex items-center gap-2 font-semibold">
+              <Smartphone className="w-3.5 h-3.5 text-emerald-400" />
+              📲 Install App (PC/Phone)
+            </span>
+          </button>
+
+          <button
+            type="button"
+            onClick={() => setIsSecurityModalOpen(true)}
+            className="w-full flex items-center justify-between px-3 py-2 rounded-xl bg-slate-900/90 hover:bg-slate-800 text-xs text-slate-200 border border-slate-800 cursor-pointer"
+          >
+            <span className="flex items-center gap-2">
+              <Settings className="w-3.5 h-3.5 text-amber-400" />
+              Password &amp; Clear Demo Data
+            </span>
+          </button>
+
+          <button
+            type="button"
             onClick={() => setIsCloudModalOpen(true)}
             className="w-full flex items-center justify-between px-3 py-2 rounded-xl bg-slate-900/90 hover:bg-slate-800 text-xs text-slate-300 border border-slate-800 cursor-pointer"
           >
@@ -1193,14 +1317,47 @@ export default function App() {
             )}
           </div>
 
-          <div className="flex items-center gap-2.5">
+          <div className="flex items-center gap-2">
+            <button
+              type="button"
+              onClick={() => {
+                exportPortfolioToCSV(enrichedLoans);
+                showToast('Exported TZS Portfolio & Referrals to Excel CSV!');
+              }}
+              title="Export TZS Loans & Referrals to Excel (CSV)"
+              className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-xl text-xs font-semibold bg-[#131C2E] hover:bg-slate-800 text-slate-200 border border-slate-700 cursor-pointer"
+            >
+              <Download className="w-3.5 h-3.5 text-emerald-400" />
+              <span className="hidden sm:inline">Export CSV</span>
+            </button>
+
+            <button
+              type="button"
+              onClick={() => setIsInstallModalOpen(true)}
+              title="Install App on Phone or PC"
+              className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-xl text-xs font-semibold bg-[#131C2E] hover:bg-slate-800 text-emerald-300 border border-emerald-500/30 cursor-pointer"
+            >
+              <Smartphone className="w-3.5 h-3.5 text-emerald-400" />
+              <span className="hidden md:inline">Install App</span>
+            </button>
+
+            <button
+              type="button"
+              onClick={() => setIsSecurityModalOpen(true)}
+              title="Account Password & Clear Sample Data"
+              className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-xl text-xs font-semibold bg-[#131C2E] hover:bg-slate-800 text-amber-300 border border-amber-500/30 cursor-pointer"
+            >
+              <Settings className="w-3.5 h-3.5 text-amber-400" />
+              <span className="hidden md:inline">Settings</span>
+            </button>
+
             <button
               type="button"
               onClick={() => setIsCloudModalOpen(true)}
               className="inline-flex items-center gap-2 px-3 py-1.5 rounded-xl text-xs font-medium bg-emerald-500/10 text-emerald-300 border border-emerald-500/30 cursor-pointer"
             >
               <span className="w-2 h-2 rounded-full bg-emerald-400 animate-pulse" />
-              <span className="hidden sm:inline">Synced (TZS)</span>
+              <span className="hidden xl:inline">Synced (TZS)</span>
             </button>
 
             <button
@@ -1567,16 +1724,25 @@ export default function App() {
                           <span className="text-slate-400">Realized Profit: </span>
                           <strong className="text-emerald-400">+{formatTZS(totalProfit)}</strong>
                         </div>
-                        <button
-                          type="button"
-                          onClick={() => {
-                            setSelectedExistingBorrowerId(b.id);
-                            setIsNewLoanOpen(true);
-                          }}
-                          className="px-3 py-1.5 rounded-lg bg-emerald-500/20 text-emerald-300 hover:bg-emerald-500 hover:text-slate-950 font-semibold transition cursor-pointer"
-                        >
-                          + Issue New Loan
-                        </button>
+                        <div className="flex items-center gap-2">
+                          <button
+                            type="button"
+                            onClick={() => setEditingBorrower(b)}
+                            className="px-2.5 py-1.5 rounded-lg bg-slate-800 hover:bg-slate-700 text-slate-200 text-xs font-semibold flex items-center gap-1 cursor-pointer"
+                          >
+                            <Edit3 className="w-3 h-3" /> Edit / Delete
+                          </button>
+                          <button
+                            type="button"
+                            onClick={() => {
+                              setSelectedExistingBorrowerId(b.id);
+                              setIsNewLoanOpen(true);
+                            }}
+                            className="px-3 py-1.5 rounded-lg bg-emerald-500/20 text-emerald-300 hover:bg-emerald-500 hover:text-slate-950 font-semibold transition cursor-pointer"
+                          >
+                            + Issue New Loan
+                          </button>
+                        </div>
                       </div>
                     </div>
                   );
@@ -2260,7 +2426,23 @@ export default function App() {
                     {selectedLoanBundle.borrower?.fullName}
                   </h2>
                 </div>
-                <div className="flex items-center gap-2">
+                <div className="flex flex-wrap items-center gap-2">
+                  <button
+                    type="button"
+                    onClick={() => setEditingLoan(selectedLoanBundle.loan)}
+                    className="px-2.5 py-1.5 rounded-lg bg-slate-800 hover:bg-slate-700 text-xs text-amber-300 flex items-center gap-1 cursor-pointer"
+                  >
+                    <Edit3 className="w-3.5 h-3.5" /> Edit / Delete Loan
+                  </button>
+                  {selectedLoanBundle.borrower && (
+                    <button
+                      type="button"
+                      onClick={() => setEditingBorrower(selectedLoanBundle.borrower!)}
+                      className="px-2.5 py-1.5 rounded-lg bg-slate-800 hover:bg-slate-700 text-xs text-sky-300 flex items-center gap-1 cursor-pointer"
+                    >
+                      <Edit3 className="w-3.5 h-3.5" /> Edit Client/Referral
+                    </button>
+                  )}
                   <button
                     type="button"
                     onClick={() => window.print()}
@@ -2612,6 +2794,48 @@ export default function App() {
             </div>
           </div>
         </div>
+      )}
+
+      {/* STAGE 2 MODALS: EDIT CLIENT/REFERRAL, EDIT LOAN, ACCOUNT SECURITY, PWA INSTALL */}
+      {editingBorrower && (
+        <EditBorrowerModal
+          borrower={editingBorrower}
+          onClose={() => setEditingBorrower(null)}
+          onSave={handleSaveEditedBorrower}
+          onDelete={handleDeleteBorrower}
+        />
+      )}
+
+      {editingLoan && (
+        <EditLoanModal
+          loan={editingLoan}
+          onClose={() => setEditingLoan(null)}
+          onSave={handleSaveEditedLoan}
+          onDelete={handleDeleteLoan}
+        />
+      )}
+
+      {isSecurityModalOpen && currentUser && (
+        <AccountSecurityModal
+          user={currentUser}
+          onClose={() => setIsSecurityModalOpen(false)}
+          onUpdateProfile={handleUpdateUserProfile}
+          onClearDemoPortfolio={handleClearDemoPortfolio}
+        />
+      )}
+
+      {isInstallModalOpen && (
+        <InstallPwaModal
+          onClose={() => setIsInstallModalOpen(false)}
+          canTriggerNativeInstall={Boolean(deferredInstallPrompt)}
+          onTriggerNativeInstall={async () => {
+            if (!deferredInstallPrompt) return;
+            deferredInstallPrompt.prompt();
+            await deferredInstallPrompt.userChoice;
+            setDeferredInstallPrompt(null);
+            setIsInstallModalOpen(false);
+          }}
+        />
       )}
     </div>
   );
