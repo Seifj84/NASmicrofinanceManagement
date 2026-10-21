@@ -139,6 +139,7 @@ export default function App() {
   // Admin Key Generator State
   const [newKeyNotes, setNewKeyNotes] = useState('');
   const [newKeyValidityDays, setNewKeyValidityDays] = useState<string>('LIFETIME');
+  const [adminScopeUserId, setAdminScopeUserId] = useState<string>('SELF');
 
   // Cloud Config State
   const [cloudConfig, setCloudConfig] = useState<CloudSyncConfig>(() => loadCloudConfig());
@@ -231,16 +232,28 @@ export default function App() {
     [appState.users, currentUserId]
   );
 
-  // Tenant-isolated data for current logged-in user
-  const userBorrowers = useMemo(
-    () => appState.borrowers.filter((b) => b.userId === currentUser?.id),
-    [appState.borrowers, currentUser?.id]
-  );
+  // Tenant-isolated data for regular users; Super Admin can inspect SELF, ALL, or any specific userId
+  const userBorrowers = useMemo(() => {
+    if (!currentUser) return [];
+    if (currentUser.role === 'SUPER_ADMIN') {
+      if (adminScopeUserId === 'ALL') return appState.borrowers;
+      if (adminScopeUserId !== 'SELF') {
+        return appState.borrowers.filter((b) => b.userId === adminScopeUserId);
+      }
+    }
+    return appState.borrowers.filter((b) => b.userId === currentUser.id);
+  }, [appState.borrowers, currentUser, adminScopeUserId]);
 
-  const userLoans = useMemo(
-    () => appState.loans.filter((l) => l.userId === currentUser?.id),
-    [appState.loans, currentUser?.id]
-  );
+  const userLoans = useMemo(() => {
+    if (!currentUser) return [];
+    if (currentUser.role === 'SUPER_ADMIN') {
+      if (adminScopeUserId === 'ALL') return appState.loans;
+      if (adminScopeUserId !== 'SELF') {
+        return appState.loans.filter((l) => l.userId === adminScopeUserId);
+      }
+    }
+    return appState.loans.filter((l) => l.userId === currentUser.id);
+  }, [appState.loans, currentUser, adminScopeUserId]);
 
   const todayIso = getTodayIso();
 
@@ -1344,6 +1357,28 @@ export default function App() {
           </div>
 
           <div className="flex items-center gap-2">
+            {currentUser.role === 'SUPER_ADMIN' && (
+              <select
+                value={adminScopeUserId}
+                onChange={(e) => {
+                  setAdminScopeUserId(e.target.value);
+                  setSelectedLoanId(null);
+                }}
+                title="Super Admin: Inspect any user's ledger or all users combined"
+                className="px-3 py-1.5 rounded-xl text-xs font-semibold bg-[#131C2E] text-emerald-300 border border-emerald-500/40 focus:outline-none cursor-pointer"
+              >
+                <option value="SELF">Ledger: My Admin Account</option>
+                <option value="ALL">Ledger: All Users Combined ({appState.users.length})</option>
+                {appState.users
+                  .filter((u) => u.id !== currentUser.id)
+                  .map((u) => (
+                    <option key={u.id} value={u.id}>
+                      Inspect: {u.businessName} ({u.emailOrPhone})
+                    </option>
+                  ))}
+              </select>
+            )}
+
             <button
               type="button"
               onClick={() => {
@@ -2089,13 +2124,20 @@ export default function App() {
                     </thead>
                     <tbody className="divide-y divide-slate-800/70">
                       {appState.users.map((u) => {
-                        const uLoansCount = appState.loans.filter((l) => l.userId === u.id).length;
+                        const uLoans = appState.loans.filter((l) => l.userId === u.id);
+                        const uBorrowersCount = appState.borrowers.filter((b) => b.userId === u.id).length;
+                        const uPrincipalTotal = uLoans.reduce((sum, l) => sum + l.principalAmount, 0);
+                        const uCollectedTotal = uLoans.reduce((sum, l) => sum + l.amountPaid, 0);
                         return (
                           <tr key={u.id} className="hover:bg-slate-800/30">
                             <td className="py-3.5 px-4">
                               <div className="font-bold text-white">{u.businessName}</div>
                               <div className="text-xs text-slate-400">
-                                {uLoansCount} Loans • Created {u.createdAt}
+                                {uLoans.length} Loans • {uBorrowersCount} Clients • Principal:{' '}
+                                <span className="text-emerald-300 font-semibold">
+                                  {formatTZS(uPrincipalTotal)}
+                                </span>{' '}
+                                • Collected: {formatTZS(uCollectedTotal)}
                               </div>
                             </td>
                             <td className="py-3.5 px-4 font-mono text-xs text-slate-200">
@@ -2121,6 +2163,17 @@ export default function App() {
                               )}
                             </td>
                             <td className="py-3.5 px-4 text-right space-x-2">
+                              <button
+                                type="button"
+                                onClick={() => {
+                                  setAdminScopeUserId(u.id === currentUser.id ? 'SELF' : u.id);
+                                  setActiveTab('DASHBOARD');
+                                  showToast(`Viewing ledger & activity for ${u.businessName}`);
+                                }}
+                                className="px-2.5 py-1 rounded-lg bg-emerald-500/20 hover:bg-emerald-500/30 text-emerald-300 text-xs font-semibold cursor-pointer"
+                              >
+                                View Ledger
+                              </button>
                               {u.role !== 'SUPER_ADMIN' ? (
                                 <>
                                   <button
