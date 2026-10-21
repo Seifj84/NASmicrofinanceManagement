@@ -80,9 +80,14 @@ export class ErrorBoundary extends Component<Props, State> {
                 {error?.name || 'Error'}: {error?.message || 'An unexpected glitch occurred.'}
               </div>
               {error?.stack && (
-                <pre className="text-[11px] text-slate-400 whitespace-pre-wrap">
-                  {error.stack.slice(0, 500)}...
-                </pre>
+                <details className="pt-2 text-[11px] text-slate-400 cursor-pointer">
+                  <summary className="font-sans font-semibold text-slate-400 hover:text-slate-200">
+                    View Technical Diagnostics (Admin / Developer)
+                  </summary>
+                  <pre className="mt-2 text-slate-500 whitespace-pre-wrap">
+                    {error.stack.slice(0, 500)}...
+                  </pre>
+                </details>
               )}
             </div>
 

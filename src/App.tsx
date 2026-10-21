@@ -122,8 +122,38 @@ export default function App() {
   const [newPhoneOrEmail, setNewPhoneOrEmail] = useState('');
   const [newPassword, setNewPassword] = useState('');
   const [authError, setAuthError] = useState<string | null>(null);
-  const [failedLoginCount, setFailedLoginCount] = useState<number>(0);
-  const [lockoutUntilMs, setLockoutUntilMs] = useState<number>(0);
+  const [failedLoginCount, setFailedLoginCount] = useState<number>(() => {
+    try {
+      return parseInt(sessionStorage.getItem('nas_failed_logins') || '0', 10) || 0;
+    } catch {
+      return 0;
+    }
+  });
+  const [lockoutUntilMs, setLockoutUntilMs] = useState<number>(() => {
+    try {
+      return parseInt(sessionStorage.getItem('nas_lockout_until') || '0', 10) || 0;
+    } catch {
+      return 0;
+    }
+  });
+
+  const updateFailedLoginCount = (count: number) => {
+    setFailedLoginCount(count);
+    try {
+      sessionStorage.setItem('nas_failed_logins', count.toString());
+    } catch {}
+  };
+
+  const updateLockoutUntilMs = (ms: number) => {
+    setLockoutUntilMs(ms);
+    try {
+      if (ms > Date.now()) {
+        sessionStorage.setItem('nas_lockout_until', ms.toString());
+      } else {
+        sessionStorage.removeItem('nas_lockout_until');
+      }
+    } catch {}
+  };
 
   // New Financial Assistance (Loan + Mandatory Referral) Form State
   const [selectedExistingBorrowerId, setSelectedExistingBorrowerId] = useState<string>('NEW');
@@ -765,7 +795,7 @@ export default function App() {
     );
     if (!user) {
       const nextCount = failedLoginCount + 1;
-      setFailedLoginCount(nextCount);
+      updateFailedLoginCount(nextCount);
       logEvent({
         category: 'AUTH_SECURITY',
         severity: 'WARN',
@@ -773,8 +803,8 @@ export default function App() {
         details: `Failed sign-in attempt with identifier "${signInIdentifier.trim()}". (Attempt ${nextCount}/5)`,
       });
       if (nextCount >= 5) {
-        setLockoutUntilMs(Date.now() + 30_000);
-        setFailedLoginCount(0);
+        updateLockoutUntilMs(Date.now() + 30_000);
+        updateFailedLoginCount(0);
         setAuthError('5 failed login attempts detected. Login locked for 30 seconds.');
       } else {
         setAuthError(
@@ -795,8 +825,8 @@ export default function App() {
       setAuthError(`Account status is ${user.accountStatus}. Contact Super Admin.`);
       return;
     }
-    setFailedLoginCount(0);
-    setLockoutUntilMs(0);
+    updateFailedLoginCount(0);
+    updateLockoutUntilMs(0);
     setSignInPassword('');
     setIsForgotPasswordOpen(false);
     setCurrentUserId(user.id);
