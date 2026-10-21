@@ -362,13 +362,13 @@ export default function App() {
   }, [cloudConfig.enabled, cloudConfig.supabaseUrl, cloudConfig.supabaseAnonKey]);
 
   const currentUser = useMemo(
-    () => appState.users.find((u) => u.id === currentUserId) || null,
-    [appState.users, currentUserId]
+    () => (appState?.users || []).find((u) => u.id === currentUserId) || null,
+    [appState?.users, currentUserId]
   );
 
   const superAdminUser = useMemo(
-    () => appState.users.find((u) => u.role === 'SUPER_ADMIN') || null,
-    [appState.users]
+    () => (appState?.users || []).find((u) => u.role === 'SUPER_ADMIN') || null,
+    [appState?.users]
   );
 
   // Tenant-isolated data for regular users; Super Admin can inspect SELF, ALL, or any specific userId
