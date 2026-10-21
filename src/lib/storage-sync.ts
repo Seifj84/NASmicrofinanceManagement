@@ -306,3 +306,42 @@ export async function pullStateFromSupabaseCloud(): Promise<AppStateData | null>
     return null;
   }
 }
+
+export async function pushAuditLogsToSupabaseCloud(logs: unknown[]): Promise<boolean> {
+  const client = createSupabaseClientIfConfigured();
+  if (!client) return false;
+  try {
+    const trimmed = (Array.isArray(logs) ? logs : []).slice(0, 150);
+    const { error } = await client.from('nas_cloud_state').upsert(
+      [
+        {
+          id: 'cloud_audit_logs',
+          payload: trimmed,
+          updated_at: new Date().toISOString(),
+        },
+      ],
+      { onConflict: 'id' }
+    );
+    return !error;
+  } catch {
+    return false;
+  }
+}
+
+export async function pullAuditLogsFromSupabaseCloud(): Promise<unknown[] | null> {
+  const client = createSupabaseClientIfConfigured();
+  if (!client) return null;
+  try {
+    const { data, error } = await client
+      .from('nas_cloud_state')
+      .select('payload')
+      .eq('id', 'cloud_audit_logs')
+      .maybeSingle();
+
+    if (error || !Array.isArray(data?.payload)) return null;
+    return data.payload;
+  } catch {
+    return null;
+  }
+}
+

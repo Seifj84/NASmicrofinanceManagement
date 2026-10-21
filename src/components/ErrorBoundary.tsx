@@ -1,6 +1,7 @@
 import React, { Component, ErrorInfo, ReactNode } from 'react';
 import { AlertTriangle, RefreshCw, Copy, Check } from 'lucide-react';
 import { logEvent } from '../lib/audit-logger';
+import { getActiveSessionUserId } from '../lib/storage-sync';
 
 interface Props {
   children: ReactNode;
@@ -31,15 +32,21 @@ export class ErrorBoundary extends Component<Props, State> {
   componentDidCatch(error: Error, errorInfo: ErrorInfo): void {
     this.setState({ errorInfo });
 
+    const activeUserId = getActiveSessionUserId();
+
     // Automatically record to audit logs under SYSTEM_ERRORS
     logEvent({
       category: 'SYSTEM_ERRORS',
       severity: 'ERROR',
+      userId: activeUserId || null,
+      userName: activeUserId ? `Active User (${activeUserId})` : 'Pre-Login / Anonymous',
       action: 'REACT_RENDER_CRASH',
       details: error.message || 'React component render crash',
       metadata: {
         stack: error.stack,
         componentStack: errorInfo.componentStack,
+        url: typeof window !== 'undefined' ? window.location.href : undefined,
+        userAgent: typeof navigator !== 'undefined' ? navigator.userAgent : undefined,
       },
     });
   }
@@ -47,10 +54,41 @@ export class ErrorBoundary extends Component<Props, State> {
   handleCopyDetails = () => {
     const { error, errorInfo } = this.state;
     const text = `NAS Microfinance Error Report:\nError: ${error?.message}\n\nStack:\n${error?.stack}\n\nComponent Stack:\n${errorInfo?.componentStack}`;
-    navigator.clipboard.writeText(text).then(() => {
-      this.setState({ copied: true });
-      setTimeout(() => this.setState({ copied: false }), 2500);
-    });
+
+    const fallbackCopy = () => {
+      try {
+        const textarea = document.createElement('textarea');
+        textarea.value = text;
+        textarea.style.position = 'fixed';
+        textarea.style.left = '-9999px';
+        textarea.style.top = '0';
+        document.body.appendChild(textarea);
+        textarea.focus();
+        textarea.select();
+        const success = document.execCommand('copy');
+        document.body.removeChild(textarea);
+        if (success) {
+          this.setState({ copied: true });
+          setTimeout(() => this.setState({ copied: false }), 2500);
+        }
+      } catch {
+        // Fallback gracefully without throwing
+      }
+    };
+
+    if (navigator.clipboard && typeof navigator.clipboard.writeText === 'function') {
+      navigator.clipboard
+        .writeText(text)
+        .then(() => {
+          this.setState({ copied: true });
+          setTimeout(() => this.setState({ copied: false }), 2500);
+        })
+        .catch(() => {
+          fallbackCopy();
+        });
+    } else {
+      fallbackCopy();
+    }
   };
 
   handleReload = () => {

@@ -39,6 +39,7 @@ import {
   LogCategory,
   LogSeverity,
   loadAuditLogs,
+  saveAuditLogs,
   logEvent,
   clearAuditLogs,
   exportLogsToCSV,
@@ -81,7 +82,10 @@ import {
   loadCloudConfig,
   pullStateFromSupabaseCloud,
   pushStateToSupabaseCloud,
+  pullAuditLogsFromSupabaseCloud,
+  pushAuditLogsToSupabaseCloud,
   saveAppState,
+  sanitizeStatePasswords,
   saveCloudConfig,
   setActiveSessionUserId,
 } from './lib/storage-sync';
@@ -202,10 +206,30 @@ export default function App() {
   const [logUserFilter, setLogUserFilter] = useState<string>('ALL');
   const [expandedLogId, setExpandedLogId] = useState<string | null>(null);
 
-  // Subscribe to live audit log entries (in-memory + cross-tab)
+  // Subscribe to live audit log entries (in-memory + cross-tab + cloud sync)
   useEffect(() => {
     const unsubscribe = subscribeToAuditLogs((next) => {
       setAuditLogs(next);
+      void pushAuditLogsToSupabaseCloud(next);
+    });
+
+    // Pull centralized cloud logs on initial launch and merge with local logs
+    void pullAuditLogsFromSupabaseCloud().then((cloudLogs) => {
+      if (cloudLogs && Array.isArray(cloudLogs) && cloudLogs.length > 0) {
+        setAuditLogs((prev) => {
+          const merged = [...(cloudLogs as AuditLogEntry[]), ...(prev || [])];
+          const seen = new Set<string>();
+          const deduped: AuditLogEntry[] = [];
+          for (const item of merged) {
+            if (!seen.has(item.id)) {
+              seen.add(item.id);
+              deduped.push(item);
+            }
+          }
+          saveAuditLogs(deduped);
+          return deduped;
+        });
+      }
     });
 
     let bc: BroadcastChannel | null = null;
@@ -214,7 +238,7 @@ export default function App() {
         bc = new BroadcastChannel('nas_audit_sync');
         bc.onmessage = (ev) => {
           if (ev.data?.type === 'LOG_APPENDED' && ev.data.entry) {
-            setAuditLogs((prev) => [ev.data.entry, ...prev.filter((l) => l.id !== ev.data.entry.id)]);
+            setAuditLogs((prev) => [ev.data.entry, ...(prev || []).filter((l) => l.id !== ev.data.entry.id)]);
           }
         };
       } catch {
@@ -298,9 +322,35 @@ export default function App() {
         'postgres_changes',
         { event: '*', schema: 'public', table: 'nas_cloud_state' },
         (payload) => {
-          const next = (payload.new as { payload?: AppStateData })?.payload;
-          if (next && next.lastSyncedAt) {
-            setAppState(next);
+          const row = payload.new as { id?: string; payload?: unknown };
+          if (row?.id === 'global_workspace' && row?.payload) {
+            const next = sanitizeStatePasswords(row.payload as AppStateData);
+            if (next && next.lastSyncedAt) {
+              setAppState((prev) => ({
+                ...prev,
+                ...next,
+                users: next.users || prev.users || [],
+                activationKeys: next.activationKeys || prev.activationKeys || [],
+                borrowers: next.borrowers || prev.borrowers || [],
+                loans: next.loans || prev.loans || [],
+                repayments: next.repayments || prev.repayments || [],
+              }));
+            }
+          } else if (row?.id === 'cloud_audit_logs' && Array.isArray(row?.payload)) {
+            const cloudLogs = row.payload as AuditLogEntry[];
+            setAuditLogs((prev) => {
+              const merged = [...cloudLogs, ...(prev || [])];
+              const seen = new Set<string>();
+              const deduped: AuditLogEntry[] = [];
+              for (const item of merged) {
+                if (!seen.has(item.id)) {
+                  seen.add(item.id);
+                  deduped.push(item);
+                }
+              }
+              saveAuditLogs(deduped);
+              return deduped;
+            });
           }
         }
       )
@@ -324,25 +374,27 @@ export default function App() {
   // Tenant-isolated data for regular users; Super Admin can inspect SELF, ALL, or any specific userId
   const userBorrowers = useMemo(() => {
     if (!currentUser) return [];
+    const list = appState?.borrowers || [];
     if (currentUser.role === 'SUPER_ADMIN') {
-      if (adminScopeUserId === 'ALL') return appState.borrowers;
+      if (adminScopeUserId === 'ALL') return list;
       if (adminScopeUserId !== 'SELF') {
-        return appState.borrowers.filter((b) => b.userId === adminScopeUserId);
+        return list.filter((b) => b.userId === adminScopeUserId);
       }
     }
-    return appState.borrowers.filter((b) => b.userId === currentUser.id);
-  }, [appState.borrowers, currentUser, adminScopeUserId]);
+    return list.filter((b) => b.userId === currentUser.id);
+  }, [appState?.borrowers, currentUser, adminScopeUserId]);
 
   const userLoans = useMemo(() => {
     if (!currentUser) return [];
+    const list = appState?.loans || [];
     if (currentUser.role === 'SUPER_ADMIN') {
-      if (adminScopeUserId === 'ALL') return appState.loans;
+      if (adminScopeUserId === 'ALL') return list;
       if (adminScopeUserId !== 'SELF') {
-        return appState.loans.filter((l) => l.userId === adminScopeUserId);
+        return list.filter((l) => l.userId === adminScopeUserId);
       }
     }
-    return appState.loans.filter((l) => l.userId === currentUser.id);
-  }, [appState.loans, currentUser, adminScopeUserId]);
+    return list.filter((l) => l.userId === currentUser.id);
+  }, [appState?.loans, currentUser, adminScopeUserId]);
 
   const todayIso = getTodayIso();
 
@@ -533,9 +585,10 @@ export default function App() {
 
   // Recent 5 Repayments for Dashboard Stream
   const recentRepaymentsList = useMemo(() => {
-    const userReps = appState.repayments.filter((r) => r.userId === currentUser?.id);
+    const list = appState?.repayments || [];
+    const userReps = list.filter((r) => r.userId === currentUser?.id);
     return userReps.slice(0, 5);
-  }, [appState.repayments, currentUser?.id]);
+  }, [appState?.repayments, currentUser?.id]);
 
   // Dynamic 6-Month Cashflow Disbursed vs Collected for Dashboard Bar Chart
   const monthlyCashflowData = useMemo(() => {
@@ -547,12 +600,13 @@ export default function App() {
       { key: '09', label: 'Sep' },
       { key: '10', label: 'Oct' },
     ];
+    const reps = appState?.repayments || [];
     return months.map(({ key, label }) => {
       const disbursed = userLoans
         .filter((l) => (l.issueDate || '').includes(`-2026-${key}-`) || (l.issueDate || '').includes(`-0${key}-`))
         .reduce((sum, l) => sum + l.principalAmount, 0);
 
-      const collected = appState.repayments
+      const collected = reps
         .filter((r) => r.userId === currentUser?.id && ((r.paidAt || '').includes(`-2026-${key}-`) || (r.paidAt || '').includes(`-0${key}-`)))
         .reduce((sum, r) => sum + r.amount, 0);
 
@@ -562,7 +616,7 @@ export default function App() {
         collected,
       };
     });
-  }, [userLoans, appState.repayments, currentUser?.id]);
+  }, [userLoans, appState?.repayments, currentUser?.id]);
 
   // Live New Loan Preview Metrics
   const liveNewLoanPreview = useMemo(() => {
@@ -2926,9 +2980,11 @@ export default function App() {
                       </tr>
                     </thead>
                     <tbody className="divide-y divide-slate-800/70">
-                      {appState.users.map((u) => {
-                        const uLoans = appState.loans.filter((l) => l.userId === u.id);
-                        const uBorrowersCount = appState.borrowers.filter((b) => b.userId === u.id).length;
+                      {(appState?.users || []).map((u) => {
+                        const allLoans = appState?.loans || [];
+                        const allBorrowers = appState?.borrowers || [];
+                        const uLoans = allLoans.filter((l) => l.userId === u.id);
+                        const uBorrowersCount = allBorrowers.filter((b) => b.userId === u.id).length;
                         const uPrincipalTotal = uLoans.reduce((sum, l) => sum + l.principalAmount, 0);
                         const uCollectedTotal = uLoans.reduce((sum, l) => sum + l.amountPaid, 0);
                         return (
