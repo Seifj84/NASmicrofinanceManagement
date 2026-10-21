@@ -31,6 +31,8 @@ import {
   FileSpreadsheet,
   AlertOctagon,
   Info,
+  BarChart3,
+  TrendingUp,
 } from 'lucide-react';
 import {
   AuditLogEntry,
@@ -457,6 +459,71 @@ export default function App() {
       ADMIN_ACTIONS: base.filter((l) => l.category === 'ADMIN_ACTIONS').length,
     };
   }, [auditLogs, currentUser]);
+
+  // Urgent Watchlist for Executive Dashboard (Overdue & Due in <= 3 Days)
+  const urgentLoans = useMemo(() => {
+    return enrichedLoans.filter(
+      ({ metrics }) => metrics.status === 'OVERDUE' || metrics.status === 'DUE_SOON'
+    );
+  }, [enrichedLoans]);
+
+  // Guarantor Reliability Analysis for Dashboard
+  const guarantorReliabilitySummary = useMemo(() => {
+    const map = new Map<
+      string,
+      { name: string; phone: string; relationship: string; totalReferred: number; overdueCount: number }
+    >();
+    for (const b of userBorrowers) {
+      const key = (b.referralName || '').trim().toLowerCase();
+      if (!key) continue;
+      const bLoans = enrichedLoans.filter((l) => l.loan.borrowerId === b.id);
+      const hasOverdue = bLoans.some((l) => l.metrics.status === 'OVERDUE');
+      const existing = map.get(key) || {
+        name: b.referralName,
+        phone: b.referralPhone,
+        relationship: b.referralRelationship,
+        totalReferred: 0,
+        overdueCount: 0,
+      };
+      existing.totalReferred += 1;
+      if (hasOverdue) existing.overdueCount += 1;
+      map.set(key, existing);
+    }
+    return Array.from(map.values()).slice(0, 6);
+  }, [userBorrowers, enrichedLoans]);
+
+  // Recent 5 Repayments for Dashboard Stream
+  const recentRepaymentsList = useMemo(() => {
+    const userReps = appState.repayments.filter((r) => r.userId === currentUser?.id);
+    return userReps.slice(0, 5);
+  }, [appState.repayments, currentUser?.id]);
+
+  // Dynamic 6-Month Cashflow Disbursed vs Collected for Dashboard Bar Chart
+  const monthlyCashflowData = useMemo(() => {
+    const months = [
+      { key: '05', label: 'May' },
+      { key: '06', label: 'Jun' },
+      { key: '07', label: 'Jul' },
+      { key: '08', label: 'Aug' },
+      { key: '09', label: 'Sep' },
+      { key: '10', label: 'Oct' },
+    ];
+    return months.map(({ key, label }) => {
+      const disbursed = userLoans
+        .filter((l) => (l.issueDate || '').includes(`-2026-${key}-`) || (l.issueDate || '').includes(`-0${key}-`))
+        .reduce((sum, l) => sum + l.principalAmount, 0);
+
+      const collected = appState.repayments
+        .filter((r) => r.userId === currentUser?.id && ((r.paidAt || '').includes(`-2026-${key}-`) || (r.paidAt || '').includes(`-0${key}-`)))
+        .reduce((sum, r) => sum + r.amount, 0);
+
+      return {
+        month: label,
+        disbursed,
+        collected,
+      };
+    });
+  }, [userLoans, appState.repayments, currentUser?.id]);
 
   // Live New Loan Preview Metrics
   const liveNewLoanPreview = useMemo(() => {
@@ -1708,9 +1775,60 @@ export default function App() {
 
         {/* Page Body */}
         <main className="flex-1 p-4 lg:p-8 max-w-7xl w-full mx-auto space-y-6">
-          {/* TAB 1 & 2: EXECUTIVE DASHBOARD / LOANS */}
-          {(activeTab === 'DASHBOARD' || activeTab === 'LOANS') && (
-            <>
+          {/* TAB 1: EXECUTIVE DASHBOARD (HOME COMMAND CENTER) */}
+          {activeTab === 'DASHBOARD' && (
+            <div className="space-y-6">
+              {/* Executive Welcome & Quick Action Bar */}
+              <div className="bg-[#131C2E] border border-slate-800 rounded-2xl p-5 md:p-6 flex flex-wrap items-center justify-between gap-4">
+                <div>
+                  <div className="flex items-center gap-2">
+                    <span className="w-2.5 h-2.5 rounded-full bg-emerald-400 animate-pulse" />
+                    <span className="text-xs font-bold uppercase tracking-wider text-emerald-400">
+                      Executive Portfolio Command Center
+                    </span>
+                  </div>
+                  <h1 className="text-xl md:text-2xl font-extrabold text-white mt-1">
+                    {currentUser.businessName}
+                  </h1>
+                  <p className="text-xs text-slate-400 mt-0.5">
+                    Operating in Tanzanian Shillings (TZS) •{' '}
+                    {dashboardKpis.activeLoansCount} active assistance contracts deployed in the field.
+                  </p>
+                </div>
+
+                <div className="flex flex-wrap items-center gap-2">
+                  <button
+                    type="button"
+                    onClick={() => setIsNewLoanOpen(true)}
+                    className="px-4 py-2 rounded-xl bg-emerald-500 hover:bg-emerald-400 text-slate-950 font-bold text-xs flex items-center gap-1.5 cursor-pointer shadow-lg"
+                  >
+                    <Plus className="w-4 h-4 stroke-[2.5]" />
+                    <span>Offer Assistance (N)</span>
+                  </button>
+
+                  <button
+                    type="button"
+                    onClick={() => setActiveTab('LOANS')}
+                    className="px-3.5 py-2 rounded-xl bg-[#0B111E] hover:bg-slate-800 border border-slate-700 text-slate-200 font-semibold text-xs flex items-center gap-1.5 cursor-pointer"
+                  >
+                    <FileText className="w-3.5 h-3.5 text-sky-400" />
+                    <span>View Full Ledger (L)</span>
+                  </button>
+
+                  <button
+                    type="button"
+                    onClick={() => {
+                      exportPortfolioToCSV(enrichedLoans);
+                      showToast('Exported TZS Portfolio & Referrals to Excel CSV!');
+                    }}
+                    className="px-3 py-2 rounded-xl bg-[#0B111E] hover:bg-slate-800 border border-slate-700 text-slate-300 font-medium text-xs flex items-center gap-1.5 cursor-pointer"
+                  >
+                    <Download className="w-3.5 h-3.5 text-emerald-400" />
+                    <span>Export CSV</span>
+                  </button>
+                </div>
+              </div>
+
               {/* 4 High-Impact TZS KPI Summary Cards */}
               <section className="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-4 gap-4">
                 <div className="bg-[#131C2E] border border-slate-800 rounded-2xl p-5">
@@ -1758,10 +1876,11 @@ export default function App() {
                 </div>
 
                 <div
-                  onClick={() =>
-                    setLoanFilter((prev) => (prev === 'OVERDUE' ? 'ALL' : 'OVERDUE'))
-                  }
-                  className="bg-[#131C2E] border border-red-500/40 hover:border-red-400 rounded-2xl p-5 cursor-pointer transition"
+                  onClick={() => {
+                    setLoanFilter('OVERDUE');
+                    setActiveTab('LOANS');
+                  }}
+                  className="bg-[#131C2E] border border-red-500/40 hover:border-red-400 rounded-2xl p-5 cursor-pointer transition shadow"
                 >
                   <div className="flex items-center justify-between text-xs font-semibold uppercase tracking-wider text-red-400">
                     <span>Overdue ("Or Else") Alert</span>
@@ -1772,10 +1891,353 @@ export default function App() {
                   </div>
                   <div className="mt-1 text-xs text-red-300 flex items-center justify-between">
                     <span>{dashboardKpis.overdueLoansCount} Overdue Loans</span>
-                    <span className="underline">Press 'O' to filter</span>
+                    <span className="underline">View in Ledger →</span>
                   </div>
                 </div>
               </section>
+
+              {/* Visual 6-Month Cashflow Performance Chart */}
+              <section className="bg-[#131C2E] border border-slate-800 rounded-2xl p-5 md:p-6 space-y-4">
+                <div className="flex flex-wrap items-center justify-between gap-3 border-b border-slate-800 pb-3">
+                  <div className="flex items-center gap-2">
+                    <BarChart3 className="w-5 h-5 text-emerald-400" />
+                    <div>
+                      <h3 className="font-bold text-sm text-white">
+                        6-Month Lending &amp; Repayment Cashflow (TZS)
+                      </h3>
+                      <p className="text-[11px] text-slate-400">
+                        Visual comparison of Capital Disbursed vs. Cash Repayments collected across your portfolio.
+                      </p>
+                    </div>
+                  </div>
+
+                  <div className="flex items-center gap-4 text-xs">
+                    <div className="flex items-center gap-2">
+                      <span className="w-3 h-3 rounded bg-sky-500" />
+                      <span className="text-slate-300">Capital Disbursed</span>
+                    </div>
+                    <div className="flex items-center gap-2">
+                      <span className="w-3 h-3 rounded bg-emerald-500" />
+                      <span className="text-slate-300">Repayments Collected</span>
+                    </div>
+                  </div>
+                </div>
+
+                {/* Bars */}
+                {(() => {
+                  const maxVal = Math.max(
+                    1,
+                    ...monthlyCashflowData.map((m) => Math.max(m.disbursed, m.collected))
+                  );
+                  return (
+                    <div className="grid grid-cols-6 gap-2 sm:gap-4 pt-4 pb-2 items-end h-48 border-b border-slate-800/80">
+                      {monthlyCashflowData.map((item) => {
+                        const disbursedHeight = Math.max(6, Math.round((item.disbursed / maxVal) * 100));
+                        const collectedHeight = Math.max(6, Math.round((item.collected / maxVal) * 100));
+                        return (
+                          <div key={item.month} className="flex flex-col items-center h-full justify-end gap-1.5">
+                            <div className="w-full flex items-end justify-center gap-1 sm:gap-2 h-36">
+                              {/* Disbursed Bar */}
+                              <div
+                                style={{ height: `${item.disbursed > 0 ? disbursedHeight : 4}%` }}
+                                title={`Disbursed: ${formatTZS(item.disbursed)}`}
+                                className={`w-3 sm:w-5 rounded-t transition-all ${
+                                  item.disbursed > 0 ? 'bg-sky-500/80 hover:bg-sky-400' : 'bg-slate-800/40'
+                                }`}
+                              />
+                              {/* Collected Bar */}
+                              <div
+                                style={{ height: `${item.collected > 0 ? collectedHeight : 4}%` }}
+                                title={`Collected: ${formatTZS(item.collected)}`}
+                                className={`w-3 sm:w-5 rounded-t transition-all ${
+                                  item.collected > 0 ? 'bg-emerald-500 hover:bg-emerald-400' : 'bg-slate-800/40'
+                                }`}
+                              />
+                            </div>
+                            <span className="text-[11px] font-mono text-slate-400 mt-1">
+                              {item.month}
+                            </span>
+                          </div>
+                        );
+                      })}
+                    </div>
+                  );
+                })()}
+
+                <div className="flex flex-wrap items-center justify-between text-xs text-slate-400 pt-1">
+                  <div>
+                    <span>Total Disbursed All-Time: </span>
+                    <strong className="text-white">{formatTZS(dashboardKpis.totalPrincipalAllTime)}</strong>
+                  </div>
+                  <div>
+                    <span>Total Collected Cash: </span>
+                    <strong className="text-emerald-400">{formatTZS(dashboardKpis.totalCollectedCash)}</strong>
+                  </div>
+                  <div>
+                    <span>Realized Profit: </span>
+                    <strong className="text-amber-300">+{formatTZS(dashboardKpis.realizedProfitTotal)}</strong>
+                  </div>
+                </div>
+              </section>
+
+              {/* Two-Column Strategic Operations Grid */}
+              <div className="grid grid-cols-1 lg:grid-cols-12 gap-6">
+                {/* Left (7 Cols): Urgent Escalation & Attention Center */}
+                <div className="lg:col-span-7 space-y-4">
+                  <div className="flex items-center justify-between">
+                    <div>
+                      <h3 className="font-bold text-sm text-white flex items-center gap-2">
+                        <AlertTriangle className="w-4 h-4 text-amber-400" />
+                        Urgent Action &amp; Escalation Center ({urgentLoans.length})
+                      </h3>
+                      <p className="text-xs text-slate-400">
+                        Loans requiring immediate Swahili WhatsApp notice or Guarantor telephone follow-up.
+                      </p>
+                    </div>
+                    {urgentLoans.length > 0 && (
+                      <span className="px-2.5 py-1 rounded-full text-[11px] font-extrabold bg-red-500/20 text-red-300 border border-red-500/40 animate-pulse">
+                        Action Required
+                      </span>
+                    )}
+                  </div>
+
+                  {urgentLoans.length === 0 ? (
+                    <div className="bg-[#131C2E] border border-emerald-500/30 rounded-2xl p-6 text-center space-y-3">
+                      <div className="w-12 h-12 rounded-full bg-emerald-500/15 text-emerald-400 flex items-center justify-center mx-auto border border-emerald-500/30">
+                        <CheckCircle2 className="w-6 h-6" />
+                      </div>
+                      <div>
+                        <h4 className="font-bold text-base text-white">Portfolio Running at 100% On-Time!</h4>
+                        <p className="text-xs text-slate-300 max-w-md mx-auto mt-1">
+                          Zero overdue exposure and zero loans due in the next 3 days. All client repayments are fully on track.
+                        </p>
+                      </div>
+                      <button
+                        type="button"
+                        onClick={() => setIsNewLoanOpen(true)}
+                        className="px-4 py-2 rounded-xl bg-emerald-500 text-slate-950 font-bold text-xs cursor-pointer shadow inline-flex items-center gap-1.5"
+                      >
+                        <Plus className="w-3.5 h-3.5 stroke-[2.5]" />
+                        <span>Issue Financial Assistance</span>
+                      </button>
+                    </div>
+                  ) : (
+                    <div className="space-y-3">
+                      {urgentLoans.map(({ loan, borrower, metrics }) => {
+                        const isOverdue = metrics.status === 'OVERDUE';
+                        return (
+                          <div
+                            key={loan.id}
+                            className={`p-4 rounded-2xl border transition ${
+                              isOverdue
+                                ? 'bg-red-500/10 border-red-500/40 hover:border-red-400'
+                                : 'bg-amber-500/10 border-amber-500/40 hover:border-amber-400'
+                            }`}
+                          >
+                            <div className="flex flex-wrap items-start justify-between gap-2 border-b border-slate-800/60 pb-2.5 mb-2.5">
+                              <div>
+                                <div className="flex items-center gap-2">
+                                  <span className="font-bold text-white text-sm">
+                                    {borrower?.fullName || 'Client'}
+                                  </span>
+                                  <span className="text-xs font-mono text-slate-400">
+                                    ({loan.loanNumber})
+                                  </span>
+                                  <span
+                                    className={`px-2 py-0.5 rounded-full text-[10px] font-extrabold ${
+                                      isOverdue
+                                        ? 'bg-red-500/20 text-red-300 border border-red-500/50'
+                                        : 'bg-amber-500/20 text-amber-300 border border-amber-500/50'
+                                    }`}
+                                  >
+                                    {isOverdue ? `🔴 ${metrics.daysOverdue}d Late` : `🟡 Due in ${metrics.daysUntilDue}d`}
+                                  </span>
+                                </div>
+                                <div className="text-xs text-slate-400 mt-0.5">
+                                  Phone: {borrower?.phoneNumber} • Due: {loan.dueDate}
+                                </div>
+                              </div>
+
+                              <div className="text-right">
+                                <div className="text-xs text-slate-400">Balance Due</div>
+                                <div className="text-base font-extrabold text-amber-300">
+                                  {formatTZS(metrics.remainingBalance)}
+                                </div>
+                              </div>
+                            </div>
+
+                            <div className="flex flex-wrap items-center justify-between gap-3 text-xs">
+                              <div className="text-slate-300">
+                                <span className="text-amber-400 font-semibold">Guarantor:</span>{' '}
+                                <strong>{borrower?.referralName}</strong> ({borrower?.referralRelationship} •{' '}
+                                {borrower?.referralPhone})
+                              </div>
+
+                              <div className="flex items-center gap-2">
+                                {borrower && (
+                                  <>
+                                    <button
+                                      type="button"
+                                      onClick={() =>
+                                        openWhatsAppToClient(borrower, loan, metrics.remainingBalance)
+                                      }
+                                      className="px-2.5 py-1.5 rounded-lg bg-[#0B111E] hover:bg-slate-800 text-emerald-400 border border-emerald-500/30 text-xs font-semibold cursor-pointer"
+                                    >
+                                      Client 💬
+                                    </button>
+                                    <button
+                                      type="button"
+                                      onClick={() =>
+                                        openWhatsAppToReferral(borrower, loan, metrics.remainingBalance)
+                                      }
+                                      className="px-2.5 py-1.5 rounded-lg bg-amber-500 hover:bg-amber-400 text-slate-950 font-bold text-xs cursor-pointer shadow"
+                                    >
+                                      Contact Guarantor (R) 📞
+                                    </button>
+                                  </>
+                                )}
+                                <button
+                                  type="button"
+                                  onClick={() => setSelectedLoanId(loan.id)}
+                                  className="px-3 py-1.5 rounded-lg bg-emerald-500 text-slate-950 font-bold text-xs cursor-pointer"
+                                >
+                                  Pay / View
+                                </button>
+                              </div>
+                            </div>
+                          </div>
+                        );
+                      })}
+                    </div>
+                  )}
+                </div>
+
+                {/* Right (5 Cols): Guarantor Trust & Recent Repayments */}
+                <div className="lg:col-span-5 space-y-5">
+                  {/* Guarantor Reliability Analysis */}
+                  <div className="bg-[#131C2E] border border-slate-800 rounded-2xl p-5 space-y-3">
+                    <div className="flex items-center justify-between">
+                      <h4 className="font-bold text-sm text-white flex items-center gap-2">
+                        <UserCheck className="w-4 h-4 text-emerald-400" />
+                        Guarantor Trust &amp; Reliability
+                      </h4>
+                      <button
+                        type="button"
+                        onClick={() => setActiveTab('BORROWERS')}
+                        className="text-xs text-emerald-400 hover:underline"
+                      >
+                        All Referrals →
+                      </button>
+                    </div>
+
+                    {guarantorReliabilitySummary.length === 0 ? (
+                      <p className="text-xs text-slate-400 py-3">No guarantor data recorded yet.</p>
+                    ) : (
+                      <div className="divide-y divide-slate-800/70 text-xs">
+                        {guarantorReliabilitySummary.map((g) => (
+                          <div key={g.name} className="py-2.5 flex items-center justify-between gap-2">
+                            <div>
+                              <div className="font-bold text-white">{g.name}</div>
+                              <div className="text-[11px] text-slate-400">
+                                {g.relationship} • {g.phone}
+                              </div>
+                            </div>
+                            <div className="text-right">
+                              {g.overdueCount > 0 ? (
+                                <span className="px-2 py-0.5 rounded-full text-[10px] font-bold bg-red-500/20 text-red-300 border border-red-500/40">
+                                  🔴 {g.overdueCount} Overdue Ref
+                                </span>
+                              ) : (
+                                <span className="px-2 py-0.5 rounded-full text-[10px] font-bold bg-emerald-500/20 text-emerald-300 border border-emerald-500/40">
+                                  🟢 {g.totalReferred} Clean Client(s)
+                                </span>
+                              )}
+                            </div>
+                          </div>
+                        ))}
+                      </div>
+                    )}
+                  </div>
+
+                  {/* Recent Repayments Stream */}
+                  <div className="bg-[#131C2E] border border-slate-800 rounded-2xl p-5 space-y-3">
+                    <div className="flex items-center justify-between">
+                      <h4 className="font-bold text-sm text-white flex items-center gap-2">
+                        <TrendingUp className="w-4 h-4 text-emerald-400" />
+                        Recent Cashflow Inflow
+                      </h4>
+                      <button
+                        type="button"
+                        onClick={() => setActiveTab('LOGS')}
+                        className="text-xs text-slate-400 hover:text-white"
+                      >
+                        View Logs →
+                      </button>
+                    </div>
+
+                    {recentRepaymentsList.length === 0 ? (
+                      <p className="text-xs text-slate-400 py-3">No repayments received yet.</p>
+                    ) : (
+                      <div className="divide-y divide-slate-800/70 text-xs">
+                        {recentRepaymentsList.map((rep) => (
+                          <div key={rep.id} className="py-2 flex items-center justify-between gap-2">
+                            <div>
+                              <div className="font-bold text-emerald-400">+{formatTZS(rep.amount)}</div>
+                              <div className="text-[11px] text-slate-400">{rep.paidAt}</div>
+                            </div>
+                            <div className="text-right">
+                              <span className="px-2 py-0.5 rounded-full text-[10px] font-semibold bg-slate-800 text-slate-300">
+                                {rep.paymentMethod.replace('_', ' ')}
+                              </span>
+                            </div>
+                          </div>
+                        ))}
+                      </div>
+                    )}
+                  </div>
+                </div>
+              </div>
+            </div>
+          )}
+
+          {/* TAB 2: FINANCIAL ASSISTANCE (COMPREHENSIVE LENDING LEDGER) */}
+          {activeTab === 'LOANS' && (
+            <div className="space-y-6">
+              {/* Ledger Header & Quick Controls */}
+              <div className="flex flex-wrap items-center justify-between gap-3">
+                <div>
+                  <h2 className="text-xl font-extrabold text-white flex items-center gap-2">
+                    <FileText className="w-5 h-5 text-emerald-400" />
+                    Financial Assistance &amp; Lending Ledger ({enrichedLoans.length})
+                  </h2>
+                  <p className="text-xs text-slate-400 mt-0.5">
+                    Operational contract book with real-time TZS balances, overdue rollovers, and guarantor contacts.
+                  </p>
+                </div>
+
+                <div className="flex items-center gap-2">
+                  <button
+                    type="button"
+                    onClick={() => {
+                      exportPortfolioToCSV(enrichedLoans);
+                      showToast('Exported TZS Portfolio & Referrals to Excel CSV!');
+                    }}
+                    className="px-3.5 py-2 rounded-xl bg-[#131C2E] hover:bg-slate-800 text-slate-200 border border-slate-700 text-xs font-semibold flex items-center gap-1.5 cursor-pointer"
+                  >
+                    <Download className="w-3.5 h-3.5 text-emerald-400" />
+                    <span>Export to CSV</span>
+                  </button>
+
+                  <button
+                    type="button"
+                    onClick={() => setIsNewLoanOpen(true)}
+                    className="px-4 py-2 rounded-xl bg-emerald-500 hover:bg-emerald-400 text-slate-950 font-bold text-xs flex items-center gap-1.5 cursor-pointer shadow"
+                  >
+                    <Plus className="w-4 h-4 stroke-[2.5]" />
+                    <span>New TZS Loan (N)</span>
+                  </button>
+                </div>
+              </div>
 
               {/* Filter Chips & Shortcut Bar */}
               <section className="flex flex-wrap items-center justify-between gap-3">
@@ -1793,7 +2255,7 @@ export default function App() {
                       onClick={() => setLoanFilter(tab.id as typeof loanFilter)}
                       className={`px-3.5 py-1.5 rounded-xl text-xs font-semibold transition cursor-pointer ${
                         loanFilter === tab.id
-                          ? 'bg-emerald-500 text-slate-950'
+                          ? 'bg-emerald-500 text-slate-950 shadow'
                           : 'bg-[#131C2E] text-slate-300 border border-slate-800 hover:border-slate-700'
                       }`}
                     >
@@ -1820,7 +2282,7 @@ export default function App() {
               </section>
 
               {/* Loans Table (Desktop) & Cards (Mobile) */}
-              <section className="bg-[#131C2E] border border-slate-800 rounded-2xl overflow-hidden">
+              <section className="bg-[#131C2E] border border-slate-800 rounded-2xl overflow-hidden shadow">
                 <div className="overflow-x-auto">
                   <table className="w-full text-left border-collapse">
                     <thead>
@@ -1842,7 +2304,7 @@ export default function App() {
                             <button
                               type="button"
                               onClick={() => setIsNewLoanOpen(true)}
-                              className="text-emerald-400 underline font-semibold"
+                              className="text-emerald-400 underline font-semibold cursor-pointer"
                             >
                               + Offer Assistance (N)
                             </button>{' '}
@@ -1984,7 +2446,7 @@ export default function App() {
                   </table>
                 </div>
               </section>
-            </>
+            </div>
           )}
 
           {/* TAB 3: CLIENTS & MANDATORY REFERRALS DIRECTORY */}
