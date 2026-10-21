@@ -88,3 +88,23 @@ As **Super Admin (`admin@nas.co.tz`)**, you have **full visibility and control**
 - **TZS Profit Calculator:** Test out "what-if" numbers (different loan amounts, rates, or late days) before issuing a real loan.
 - **Export CSV (Excel):** Download the current loan ledger and referral list to an Excel-compatible `.csv` file with one click.
 - **Real-Time PC & Phone Sync:** Powered by Supabase Cloud—any loan, payment, or user key created on your PC immediately syncs to your phone (and vice versa).
+
+---
+
+## 7. System Activity & Security Audit Logs (Categorized & Error Tracking)
+
+Access the live audit trail by clicking **Activity & Audit Logs** in the sidebar (or press **`A`**):
+
+### The 5 Log Categories:
+1. 🔐 **Auth & Security:** Real-time logging of logins, logouts, 15-minute idle lockouts, account activations, and blocked login attempts.
+2. 💰 **Transactions & Ledger:** Creation of new loans (`TZS`), repayments recorded (`M-Pesa`, `Tigo Pesa`, `Cash`, etc.), overdue rollover cycles, and penalty waivers.
+3. 👥 **Clients & Referrals:** Client additions, profile edits, guarantor changes, and 1-click Swahili WhatsApp reminder escalations.
+4. ⚠️ **Technical & System Errors:** Automatic black-box recording of runtime JavaScript glitches, network drops/restorations, and cloud sync errors with full diagnostic stack traces.
+5. ⚡ **Admin Actions:** Activation keys generated, user accounts created/suspended/deleted, and portfolio resets.
+
+### Key Audit Features:
+- **Category Filter Tabs:** Click **All Logs**, or filter directly into **Auth & Security**, **Transactions**, **Technical & Errors**, etc.
+- **Inspect Metadata & Error Stacks:** Click **Inspect** on any log entry to view diagnostic metadata, error stacks, or transaction parameters.
+- **Super Admin User Filter:** Super Admin can view logs for all accounts combined or isolate a single user's activity; regular users only see their own logs.
+- **Export to CSV:** Download audit records to an Excel-compatible CSV file for compliance and bookkeeping.
+- **Crash Prevention (Error Boundary):** If any unexpected browser glitch happens, a friendly recovery card appears with a 1-click **Reload & Recover Workspace** button, preventing black screens permanently.

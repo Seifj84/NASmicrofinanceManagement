@@ -132,9 +132,15 @@ export function formatTZS(amount: number, includePrefix = true): string {
  * Adds a specified number of days to an ISO YYYY-MM-DD date string
  */
 export function addDaysToDate(isoDate: string, days: number): string {
+  if (!isoDate || typeof isoDate !== 'string') {
+    isoDate = new Date().toISOString().slice(0, 10);
+  }
   const parts = isoDate.split('-').map(Number);
-  const dt = new Date(Date.UTC(parts[0], (parts[1] || 1) - 1, parts[2] || 1));
-  dt.setUTCDate(dt.getUTCDate() + days);
+  const year = parts[0] || 2026;
+  const month = (parts[1] || 1) - 1;
+  const day = parts[2] || 1;
+  const dt = new Date(Date.UTC(year, month, day));
+  dt.setUTCDate(dt.getUTCDate() + (Number(days) || 0));
   return dt.toISOString().slice(0, 10);
 }
 
@@ -142,10 +148,14 @@ export function addDaysToDate(isoDate: string, days: number): string {
  * Returns difference in whole days: (targetDate - referenceDate)
  */
 export function diffInDays(targetIsoDate: string, referenceIsoDate: string): number {
+  if (!targetIsoDate || typeof targetIsoDate !== 'string') return 0;
+  if (!referenceIsoDate || typeof referenceIsoDate !== 'string') {
+    referenceIsoDate = new Date().toISOString().slice(0, 10);
+  }
   const tParts = targetIsoDate.split('-').map(Number);
   const rParts = referenceIsoDate.split('-').map(Number);
-  const tUtc = Date.UTC(tParts[0], (tParts[1] || 1) - 1, tParts[2] || 1);
-  const rUtc = Date.UTC(rParts[0], (rParts[1] || 1) - 1, rParts[2] || 1);
+  const tUtc = Date.UTC(tParts[0] || 2026, (tParts[1] || 1) - 1, tParts[2] || 1);
+  const rUtc = Date.UTC(rParts[0] || 2026, (rParts[1] || 1) - 1, rParts[2] || 1);
   return Math.round((tUtc - rUtc) / (1000 * 60 * 60 * 24));
 }
 

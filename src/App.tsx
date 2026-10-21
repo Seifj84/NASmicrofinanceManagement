@@ -27,7 +27,21 @@ import {
   Edit3,
   Smartphone,
   Settings,
+  Activity,
+  FileSpreadsheet,
+  AlertOctagon,
+  Info,
 } from 'lucide-react';
+import {
+  AuditLogEntry,
+  LogCategory,
+  LogSeverity,
+  loadAuditLogs,
+  logEvent,
+  clearAuditLogs,
+  exportLogsToCSV,
+  subscribeToAuditLogs,
+} from './lib/audit-logger';
 import {
   AccountSecurityModal,
   EditBorrowerModal,
@@ -68,7 +82,7 @@ import {
   setActiveSessionUserId,
 } from './lib/storage-sync';
 
-type NavTab = 'DASHBOARD' | 'LOANS' | 'BORROWERS' | 'CALCULATOR' | 'ADMIN_KEYS';
+type NavTab = 'DASHBOARD' | 'LOANS' | 'BORROWERS' | 'CALCULATOR' | 'ADMIN_KEYS' | 'LOGS';
 
 export default function App() {
   const [appState, setAppState] = useState<AppStateData>(() => loadAppState());
@@ -143,6 +157,40 @@ export default function App() {
 
   // Cloud Config State
   const [cloudConfig, setCloudConfig] = useState<CloudSyncConfig>(() => loadCloudConfig());
+
+  // Activity & Security Audit Logs State
+  const [auditLogs, setAuditLogs] = useState<AuditLogEntry[]>(() => loadAuditLogs());
+  const [logCategoryFilter, setLogCategoryFilter] = useState<'ALL' | LogCategory>('ALL');
+  const [logSeverityFilter, setLogSeverityFilter] = useState<'ALL' | LogSeverity>('ALL');
+  const [logSearchQuery, setLogSearchQuery] = useState('');
+  const [logUserFilter, setLogUserFilter] = useState<string>('ALL');
+  const [expandedLogId, setExpandedLogId] = useState<string | null>(null);
+
+  // Subscribe to live audit log entries (in-memory + cross-tab)
+  useEffect(() => {
+    const unsubscribe = subscribeToAuditLogs((next) => {
+      setAuditLogs(next);
+    });
+
+    let bc: BroadcastChannel | null = null;
+    if (typeof window !== 'undefined' && 'BroadcastChannel' in window) {
+      try {
+        bc = new BroadcastChannel('nas_audit_sync');
+        bc.onmessage = (ev) => {
+          if (ev.data?.type === 'LOG_APPENDED' && ev.data.entry) {
+            setAuditLogs((prev) => [ev.data.entry, ...prev.filter((l) => l.id !== ev.data.entry.id)]);
+          }
+        };
+      } catch {
+        // ignore
+      }
+    }
+
+    return () => {
+      unsubscribe();
+      if (bc) bc.close();
+    };
+  }, []);
 
   const searchInputRef = useRef<HTMLInputElement>(null);
 
@@ -346,6 +394,70 @@ export default function App() {
     [enrichedLoans, selectedLoanId]
   );
 
+  // Filtered Activity & Audit Logs for current user / category / search
+  const filteredAuditLogs = useMemo(() => {
+    return auditLogs.filter((item) => {
+      // Access control:
+      // Regular user: can only see their own logs OR system errors
+      if (currentUser?.role !== 'SUPER_ADMIN') {
+        if (item.userId && item.userId !== currentUser?.id && item.category !== 'SYSTEM_ERRORS') {
+          return false;
+        }
+      } else {
+        // Super admin filter
+        if (logUserFilter !== 'ALL') {
+          if (logUserFilter === 'SYSTEM') {
+            if (item.userId !== null) return false;
+          } else if (item.userId !== logUserFilter) {
+            return false;
+          }
+        }
+      }
+
+      // Category filter
+      if (logCategoryFilter !== 'ALL' && item.category !== logCategoryFilter) {
+        return false;
+      }
+
+      // Severity filter
+      if (logSeverityFilter !== 'ALL' && item.severity !== logSeverityFilter) {
+        return false;
+      }
+
+      // Search query filter
+      if (logSearchQuery.trim()) {
+        const q = logSearchQuery.trim().toLowerCase();
+        const matchesAction = item.action.toLowerCase().includes(q);
+        const matchesDetails = item.details.toLowerCase().includes(q);
+        const matchesUser = (item.userName || '').toLowerCase().includes(q);
+        const matchesCat = item.category.toLowerCase().includes(q);
+        if (!matchesAction && !matchesDetails && !matchesUser && !matchesCat) {
+          return false;
+        }
+      }
+
+      return true;
+    });
+  }, [auditLogs, currentUser, logCategoryFilter, logSeverityFilter, logSearchQuery, logUserFilter]);
+
+  const logCategoryCounts = useMemo(() => {
+    const base =
+      currentUser?.role === 'SUPER_ADMIN'
+        ? auditLogs
+        : auditLogs.filter(
+            (l) => !l.userId || l.userId === currentUser?.id || l.category === 'SYSTEM_ERRORS'
+          );
+
+    return {
+      ALL: base.length,
+      AUTH_SECURITY: base.filter((l) => l.category === 'AUTH_SECURITY').length,
+      TRANSACTIONS: base.filter((l) => l.category === 'TRANSACTIONS').length,
+      CLIENTS_REFERRALS: base.filter((l) => l.category === 'CLIENTS_REFERRALS').length,
+      SYSTEM_ERRORS: base.filter((l) => l.category === 'SYSTEM_ERRORS').length,
+      ADMIN_ACTIONS: base.filter((l) => l.category === 'ADMIN_ACTIONS').length,
+    };
+  }, [auditLogs, currentUser]);
+
   // Live New Loan Preview Metrics
   const liveNewLoanPreview = useMemo(() => {
     const P = Math.max(0, Number(principalInput.replace(/,/g, '')) || 0);
@@ -468,6 +580,9 @@ export default function App() {
       } else if (key === 'c') {
         e.preventDefault();
         setActiveTab('CALCULATOR');
+      } else if (key === 'a') {
+        e.preventDefault();
+        setActiveTab('LOGS');
       } else if (key === 'k' && currentUser.role === 'SUPER_ADMIN') {
         e.preventDefault();
         setActiveTab('ADMIN_KEYS');
@@ -517,6 +632,15 @@ export default function App() {
 
   // WhatsApp Helpers (Client & Referral)
   const openWhatsAppToClient = (borrower: Borrower, loan: LoanRecord, remainingTzs: number) => {
+    logEvent({
+      category: 'CLIENTS_REFERRALS',
+      severity: 'INFO',
+      userId: currentUser?.id,
+      userName: currentUser?.businessName,
+      action: 'WHATSAPP_CLIENT_OPENED',
+      details: `Opened WhatsApp reminder to client ${borrower.fullName} (${borrower.phoneNumber}) for loan #${loan.loanNumber}.`,
+      metadata: { loanNumber: loan.loanNumber, remainingTzs },
+    });
     const cleanPhone = borrower.phoneNumber.replace(/[^0-9]/g, '');
     const msg = encodeURIComponent(
       `Habari ${borrower.fullName}, ujumbe kutoka NAS Microfinance kuhusu msaada wa kifedha (${loan.loanNumber}) wa ${formatTZS(
@@ -529,6 +653,15 @@ export default function App() {
   };
 
   const openWhatsAppToReferral = (borrower: Borrower, loan: LoanRecord, remainingTzs: number) => {
+    logEvent({
+      category: 'CLIENTS_REFERRALS',
+      severity: 'INFO',
+      userId: currentUser?.id,
+      userName: currentUser?.businessName,
+      action: 'WHATSAPP_REFERRAL_ESCALATED',
+      details: `Escalated loan #${loan.loanNumber} to referral/guarantor ${borrower.referralName} (${borrower.referralPhone}) for client ${borrower.fullName}.`,
+      metadata: { loanNumber: loan.loanNumber, referralName: borrower.referralName, remainingTzs },
+    });
     const cleanPhone = borrower.referralPhone.replace(/[^0-9]/g, '');
     const msg = encodeURIComponent(
       `Habari ${borrower.referralName}, tunakutaarifu kutoka NAS Microfinance kuwa mteja uliyemtambulisha/kumdhamini (${borrower.fullName}, Simu: ${borrower.phoneNumber}) ana mkopo #${loan.loanNumber} wenye salio la ${formatTZS(
@@ -557,6 +690,12 @@ export default function App() {
     if (!user) {
       const nextCount = failedLoginCount + 1;
       setFailedLoginCount(nextCount);
+      logEvent({
+        category: 'AUTH_SECURITY',
+        severity: 'WARN',
+        action: 'SIGN_IN_FAILED',
+        details: `Failed sign-in attempt with identifier "${signInIdentifier.trim()}". (Attempt ${nextCount}/5)`,
+      });
       if (nextCount >= 5) {
         setLockoutUntilMs(Date.now() + 30_000);
         setFailedLoginCount(0);
@@ -569,6 +708,14 @@ export default function App() {
       return;
     }
     if (user.accountStatus !== 'ACTIVE') {
+      logEvent({
+        category: 'AUTH_SECURITY',
+        severity: 'ERROR',
+        userId: user.id,
+        userName: user.businessName,
+        action: 'SIGN_IN_BLOCKED_STATUS',
+        details: `Login attempt blocked for account ${user.businessName} because status is ${user.accountStatus}.`,
+      });
       setAuthError(`Account status is ${user.accountStatus}. Contact Super Admin.`);
       return;
     }
@@ -577,6 +724,14 @@ export default function App() {
     setSignInPassword('');
     setCurrentUserId(user.id);
     setActiveSessionUserId(user.id);
+    logEvent({
+      category: 'AUTH_SECURITY',
+      severity: 'SUCCESS',
+      userId: user.id,
+      userName: user.businessName,
+      action: 'SIGN_IN_SUCCESS',
+      details: `User "${user.businessName}" signed in successfully (${user.role}).`,
+    });
     showToast(`Welcome back, ${user.businessName}!`);
   };
 
@@ -656,6 +811,15 @@ export default function App() {
     setActiveSessionUserId(newUserId);
     setNewPassword('');
     setActivationKeyInput('');
+    logEvent({
+      category: 'AUTH_SECURITY',
+      severity: 'SUCCESS',
+      userId: newUserId,
+      userName: newUser.businessName,
+      action: 'ACCOUNT_ACTIVATED',
+      details: `Account "${newUser.businessName}" activated with one-time key "${formattedKey}".`,
+      metadata: { keyCode: formattedKey, role: newUser.role },
+    });
     showToast('Account activated successfully!');
   };
 
@@ -765,6 +929,15 @@ export default function App() {
     saveAppState(nextState);
     setIsNewLoanOpen(false);
     setSelectedLoanId(newLoan.id);
+    logEvent({
+      category: 'TRANSACTIONS',
+      severity: 'SUCCESS',
+      userId: currentUser.id,
+      userName: currentUser.businessName,
+      action: 'LOAN_CREATED',
+      details: `Issued ${loanNum} of ${formatTZS(P)} (${rate}% for ${days}d) to ${clientName.trim()} (Referral: ${referralName.trim()}).`,
+      metadata: { loanNumber: loanNum, principal: P, rate, durationDays: days, borrower: clientName.trim(), referral: referralName.trim() },
+    });
     showToast(`Issued ${loanNum}: ${formatTZS(P)} (${rate}% for ${days}d)`);
 
     // Reset form
@@ -831,6 +1004,15 @@ export default function App() {
     saveAppState(nextState);
     setRepaymentAmountInput('');
     setRepaymentRefInput('');
+    logEvent({
+      category: 'TRANSACTIONS',
+      severity: 'SUCCESS',
+      userId: currentUser.id,
+      userName: currentUser.businessName,
+      action: 'REPAYMENT_RECORDED',
+      details: `Recorded payment of ${formatTZS(amount)} via ${repaymentMethodInput.replace('_', ' ')} for loan #${loan.loanNumber}.`,
+      metadata: { loanNumber: loan.loanNumber, amount, method: repaymentMethodInput, reference: newRepayment.referenceNote },
+    });
     showToast(`Recorded repayment of ${formatTZS(amount)} for ${loan.loanNumber}`);
   };
 
@@ -857,6 +1039,17 @@ export default function App() {
     const nextState = { ...appState, loans: updatedLoans };
     setAppState(nextState);
     saveAppState(nextState);
+    if (currentUser) {
+      logEvent({
+        category: 'TRANSACTIONS',
+        severity: 'INFO',
+        userId: currentUser.id,
+        userName: currentUser.businessName,
+        action: 'PENALTY_WAIVED',
+        details: `Waived ${formatTZS(penaltyToWaive)} overdue penalty for loan.`,
+        metadata: { loanId, waivedAmount: penaltyToWaive },
+      });
+    }
     showToast(`Waived ${formatTZS(penaltyToWaive)} overdue fee.`);
   };
 
@@ -882,6 +1075,17 @@ export default function App() {
     const nextState = { ...appState, loans: updatedLoans };
     setAppState(nextState);
     saveAppState(nextState);
+    if (currentUser) {
+      logEvent({
+        category: 'TRANSACTIONS',
+        severity: 'INFO',
+        userId: currentUser.id,
+        userName: currentUser.businessName,
+        action: 'DUE_DATE_EXTENDED',
+        details: `Extended loan deadline by +${extraDays} days.`,
+        metadata: { loanId, extraDays },
+      });
+    }
     showToast(`Extended loan deadline by +${extraDays} days.`);
   };
 
@@ -906,6 +1110,15 @@ export default function App() {
     setAppState(nextState);
     saveAppState(nextState);
     setNewKeyNotes('');
+    logEvent({
+      category: 'ADMIN_ACTIONS',
+      severity: 'INFO',
+      userId: currentUser.id,
+      userName: currentUser.businessName,
+      action: 'KEY_GENERATED',
+      details: `Generated one-time activation key ${code} (Validity: ${newKeyValidityDays}).`,
+      metadata: { keyCode: code, validityDays: newKeyValidityDays, notes: newKey.notes },
+    });
     showToast(`Generated One-Time Activation Key: ${code}`);
   };
 
@@ -918,10 +1131,21 @@ export default function App() {
     setAppState(nextState);
     saveAppState(nextState);
     setEditingBorrower(null);
+    if (currentUser) {
+      logEvent({
+        category: 'CLIENTS_REFERRALS',
+        severity: 'INFO',
+        userId: currentUser.id,
+        userName: currentUser.businessName,
+        action: 'CLIENT_UPDATED',
+        details: `Updated details for client ${updated.fullName} (Referral: ${updated.referralName}).`,
+      });
+    }
     showToast(`Updated client & referral details for ${updated.fullName}`);
   };
 
   const handleDeleteBorrower = (borrowerId: string) => {
+    const targetBorrower = appState.borrowers.find((b) => b.id === borrowerId);
     const nextState: AppStateData = {
       ...appState,
       borrowers: appState.borrowers.filter((b) => b.id !== borrowerId),
@@ -931,6 +1155,16 @@ export default function App() {
     saveAppState(nextState);
     setEditingBorrower(null);
     setSelectedLoanId(null);
+    if (currentUser) {
+      logEvent({
+        category: 'CLIENTS_REFERRALS',
+        severity: 'WARN',
+        userId: currentUser.id,
+        userName: currentUser.businessName,
+        action: 'CLIENT_DELETED',
+        details: `Deleted client ${targetBorrower?.fullName || borrowerId} and associated loans.`,
+      });
+    }
     showToast('Deleted client and associated loans.');
   };
 
@@ -942,10 +1176,21 @@ export default function App() {
     setAppState(nextState);
     saveAppState(nextState);
     setEditingLoan(null);
+    if (currentUser) {
+      logEvent({
+        category: 'TRANSACTIONS',
+        severity: 'INFO',
+        userId: currentUser.id,
+        userName: currentUser.businessName,
+        action: 'LOAN_UPDATED',
+        details: `Updated terms for Loan #${updated.loanNumber} (Principal: ${formatTZS(updated.principalAmount)}).`,
+      });
+    }
     showToast(`Updated Loan #${updated.loanNumber}`);
   };
 
   const handleDeleteLoan = (loanId: string) => {
+    const targetLoan = appState.loans.find((l) => l.id === loanId);
     const nextState: AppStateData = {
       ...appState,
       loans: appState.loans.filter((l) => l.id !== loanId),
@@ -955,6 +1200,16 @@ export default function App() {
     saveAppState(nextState);
     setEditingLoan(null);
     setSelectedLoanId(null);
+    if (currentUser) {
+      logEvent({
+        category: 'TRANSACTIONS',
+        severity: 'WARN',
+        userId: currentUser.id,
+        userName: currentUser.businessName,
+        action: 'LOAN_DELETED',
+        details: `Deleted Loan #${targetLoan?.loanNumber || loanId} and its repayment records.`,
+      });
+    }
     showToast('Deleted loan record.');
   };
 
@@ -966,6 +1221,16 @@ export default function App() {
     setAppState(nextState);
     saveAppState(nextState);
     setIsSecurityModalOpen(false);
+    if (currentUser) {
+      logEvent({
+        category: 'AUTH_SECURITY',
+        severity: 'INFO',
+        userId: currentUser.id,
+        userName: currentUser.businessName,
+        action: 'PROFILE_UPDATED',
+        details: `Updated security credentials / business name for ${updated.businessName}.`,
+      });
+    }
     showToast('Saved your login credentials & business profile!');
   };
 
@@ -982,6 +1247,14 @@ export default function App() {
     setIsSecurityModalOpen(false);
     setIsCloudModalOpen(false);
     setSelectedLoanId(null);
+    logEvent({
+      category: 'ADMIN_ACTIONS',
+      severity: 'WARN',
+      userId: currentUser.id,
+      userName: currentUser.businessName,
+      action: 'PORTFOLIO_RESET',
+      details: `Cleared sample/portfolio data for user "${currentUser.businessName}".`,
+    });
     showToast('Cleared sample data! Your TZS portfolio is now fresh at TZS 0.');
   };
 
@@ -1222,6 +1495,7 @@ export default function App() {
               { id: 'LOANS' as NavTab, label: 'Financial Assistance', icon: FileText, key: 'L' },
               { id: 'BORROWERS' as NavTab, label: 'Clients & Referrals', icon: Users, key: 'B' },
               { id: 'CALCULATOR' as NavTab, label: 'TZS Profit Calculator', icon: Calculator, key: 'C' },
+              { id: 'LOGS' as NavTab, label: 'Activity & Audit Logs', icon: Activity, key: 'A' },
             ].map((item) => {
               const Icon = item.icon;
               const active = activeTab === item.id;
@@ -2191,6 +2465,15 @@ export default function App() {
                                       };
                                       setAppState(next);
                                       saveAppState(next);
+                                      logEvent({
+                                        category: 'ADMIN_ACTIONS',
+                                        severity: nextStatus === 'SUSPENDED' ? 'WARN' : 'SUCCESS',
+                                        userId: currentUser.id,
+                                        userName: currentUser.businessName,
+                                        action: 'USER_STATUS_CHANGED',
+                                        details: `Account status for "${u.businessName}" (${u.emailOrPhone}) changed to ${nextStatus}.`,
+                                        metadata: { targetUserId: u.id, nextStatus },
+                                      });
                                       showToast(
                                         `${u.businessName} is now ${nextStatus}`
                                       );
@@ -2220,6 +2503,15 @@ export default function App() {
                                         };
                                         setAppState(next);
                                         saveAppState(next);
+                                        logEvent({
+                                          category: 'ADMIN_ACTIONS',
+                                          severity: 'WARN',
+                                          userId: currentUser.id,
+                                          userName: currentUser.businessName,
+                                          action: 'USER_DELETED',
+                                          details: `Permanently deleted user account "${u.businessName}" (${u.emailOrPhone}) and their data.`,
+                                          metadata: { targetUserId: u.id, targetUserName: u.businessName },
+                                        });
                                         showToast(`Deleted user ${u.businessName}`);
                                       }
                                     }}
@@ -2241,6 +2533,276 @@ export default function App() {
               </div>
             </section>
           )}
+
+          {/* TAB 6: ACTIVITY & AUDIT LOGS (CATEGORIZED & ERROR-TRACKING) */}
+          {activeTab === 'LOGS' && (
+            <section className="space-y-5">
+              {/* Top Summary & Actions Card */}
+              <div className="bg-[#131C2E] border border-slate-800 rounded-2xl p-5 md:p-6 space-y-4">
+                <div className="flex flex-wrap items-center justify-between gap-4">
+                  <div className="flex items-center gap-3">
+                    <div className="w-10 h-10 rounded-xl bg-emerald-500/15 border border-emerald-500/30 text-emerald-400 flex items-center justify-center shrink-0">
+                      <Activity className="w-5 h-5 stroke-[2.2]" />
+                    </div>
+                    <div>
+                      <h2 className="text-lg font-bold text-white flex items-center gap-2">
+                        System Activity &amp; Security Audit Logs
+                      </h2>
+                      <p className="text-xs text-slate-400">
+                        Chronological record of logins, transactions, WhatsApp escalations, and technical system health.
+                      </p>
+                    </div>
+                  </div>
+
+                  <div className="flex flex-wrap items-center gap-2">
+                    <button
+                      type="button"
+                      onClick={() => {
+                        exportLogsToCSV(filteredAuditLogs);
+                        showToast(`Exported ${filteredAuditLogs.length} audit logs to CSV!`);
+                      }}
+                      className="px-3.5 py-2 rounded-xl bg-[#0B111E] hover:bg-slate-800 border border-slate-700 text-xs font-semibold text-slate-200 flex items-center gap-1.5 cursor-pointer shadow"
+                    >
+                      <Download className="w-3.5 h-3.5 text-emerald-400" />
+                      <span>Export Logs (CSV)</span>
+                    </button>
+
+                    {currentUser.role === 'SUPER_ADMIN' && (
+                      <button
+                        type="button"
+                        onClick={() => {
+                          if (
+                            window.confirm(
+                              'Are you sure you want to reset the audit trail? This will archive existing history.'
+                            )
+                          ) {
+                            clearAuditLogs(currentUser.id, currentUser.businessName);
+                            showToast('Audit trail history was reset.');
+                          }
+                        }}
+                        className="px-3.5 py-2 rounded-xl bg-red-500/10 hover:bg-red-500/20 border border-red-500/30 text-xs font-semibold text-red-300 cursor-pointer"
+                      >
+                        Clear Logs
+                      </button>
+                    )}
+                  </div>
+                </div>
+
+                {/* Category Filter Tabs */}
+                <div className="flex flex-wrap items-center gap-2 pt-2 border-t border-slate-800/80">
+                  {[
+                    { id: 'ALL' as const, label: 'All Logs', count: logCategoryCounts.ALL },
+                    { id: 'AUTH_SECURITY' as const, label: '🔐 Auth & Security', count: logCategoryCounts.AUTH_SECURITY },
+                    { id: 'TRANSACTIONS' as const, label: '💰 Transactions & Ledger', count: logCategoryCounts.TRANSACTIONS },
+                    { id: 'CLIENTS_REFERRALS' as const, label: '👥 Clients & Referrals', count: logCategoryCounts.CLIENTS_REFERRALS },
+                    { id: 'SYSTEM_ERRORS' as const, label: '⚠️ Technical & Errors', count: logCategoryCounts.SYSTEM_ERRORS },
+                    { id: 'ADMIN_ACTIONS' as const, label: '⚡ Admin Actions', count: logCategoryCounts.ADMIN_ACTIONS },
+                  ].map((cat) => (
+                    <button
+                      key={cat.id}
+                      type="button"
+                      onClick={() => setLogCategoryFilter(cat.id)}
+                      className={`px-3 py-1.5 rounded-xl text-xs font-semibold transition cursor-pointer flex items-center gap-1.5 ${
+                        logCategoryFilter === cat.id
+                          ? 'bg-emerald-500 text-slate-950 font-bold shadow'
+                          : 'bg-[#0B111E] text-slate-300 border border-slate-800 hover:border-slate-700'
+                      }`}
+                    >
+                      <span>{cat.label}</span>
+                      <span
+                        className={`text-[10px] px-1.5 py-0.2 rounded-full font-mono ${
+                          logCategoryFilter === cat.id
+                            ? 'bg-slate-950 text-white'
+                            : 'bg-slate-800 text-slate-400'
+                        }`}
+                      >
+                        {cat.count}
+                      </span>
+                    </button>
+                  ))}
+                </div>
+
+                {/* Filter Controls Row: Search, User Scope & Severity */}
+                <div className="grid grid-cols-1 md:grid-cols-12 gap-3 pt-2">
+                  <div className="md:col-span-6 relative">
+                    <Search className="w-3.5 h-3.5 text-slate-400 absolute left-3 top-1/2 -translate-y-1/2" />
+                    <input
+                      type="text"
+                      value={logSearchQuery}
+                      onChange={(e) => setLogSearchQuery(e.target.value)}
+                      placeholder="Search by action, description, error or user..."
+                      className="w-full pl-9 pr-8 py-2 rounded-xl bg-[#0B111E] border border-slate-700 text-xs text-white placeholder-slate-500 focus:border-emerald-500 focus:outline-none"
+                    />
+                    {logSearchQuery && (
+                      <button
+                        type="button"
+                        onClick={() => setLogSearchQuery('')}
+                        className="absolute right-2.5 top-1/2 -translate-y-1/2 text-xs text-slate-400 hover:text-white"
+                      >
+                        ✕
+                      </button>
+                    )}
+                  </div>
+
+                  {currentUser.role === 'SUPER_ADMIN' && (
+                    <div className="md:col-span-3">
+                      <select
+                        value={logUserFilter}
+                        onChange={(e) => setLogUserFilter(e.target.value)}
+                        className="w-full px-3 py-2 rounded-xl bg-[#0B111E] border border-slate-700 text-xs text-slate-200 focus:border-emerald-500 focus:outline-none cursor-pointer"
+                      >
+                        <option value="ALL">Filter User: All Accounts</option>
+                        <option value={currentUser.id}>Only My Admin Account</option>
+                        {appState.users
+                          .filter((u) => u.id !== currentUser.id)
+                          .map((u) => (
+                            <option key={u.id} value={u.id}>
+                              User: {u.businessName}
+                            </option>
+                          ))}
+                        <option value="SYSTEM">System / Guest Background</option>
+                      </select>
+                    </div>
+                  )}
+
+                  <div className={currentUser.role === 'SUPER_ADMIN' ? 'md:col-span-3' : 'md:col-span-6'}>
+                    <select
+                      value={logSeverityFilter}
+                      onChange={(e) => setLogSeverityFilter(e.target.value as typeof logSeverityFilter)}
+                      className="w-full px-3 py-2 rounded-xl bg-[#0B111E] border border-slate-700 text-xs text-slate-200 focus:border-emerald-500 focus:outline-none cursor-pointer"
+                    >
+                      <option value="ALL">Filter Severity: All Severities</option>
+                      <option value="ERROR">🔴 ERROR (Issues &amp; Crashes)</option>
+                      <option value="WARN">🟡 WARN (Warnings &amp; Blocks)</option>
+                      <option value="SUCCESS">🟢 SUCCESS (Completed Operations)</option>
+                      <option value="INFO">🔵 INFO (Informational Notices)</option>
+                    </select>
+                  </div>
+                </div>
+              </div>
+
+              {/* Logs Table */}
+              <div className="bg-[#131C2E] border border-slate-800 rounded-2xl overflow-hidden shadow">
+                <div className="overflow-x-auto">
+                  <table className="w-full text-left border-collapse text-xs">
+                    <thead>
+                      <tr className="border-b border-slate-800 text-[11px] font-bold uppercase tracking-wider text-slate-400 bg-[#0F172A]">
+                        <th className="py-3 px-4">Timestamp</th>
+                        <th className="py-3 px-4">Severity &amp; Category</th>
+                        <th className="py-3 px-4">Action Code</th>
+                        <th className="py-3 px-4">Account / Initiator</th>
+                        <th className="py-3 px-4">Details</th>
+                        <th className="py-3 px-4 text-right">Details</th>
+                      </tr>
+                    </thead>
+                    <tbody className="divide-y divide-slate-800/60">
+                      {filteredAuditLogs.length === 0 ? (
+                        <tr>
+                          <td colSpan={6} className="py-12 text-center text-slate-400">
+                            No logs match the current filter criteria.
+                          </td>
+                        </tr>
+                      ) : (
+                        filteredAuditLogs.map((item) => {
+                          const isExpanded = expandedLogId === item.id;
+                          return (
+                            <React.Fragment key={item.id}>
+                              <tr className="hover:bg-slate-800/40 transition">
+                                <td className="py-3 px-4 font-mono text-slate-300 whitespace-nowrap">
+                                  <div>{item.formattedTime}</div>
+                                  <div className="text-[10px] text-slate-500">
+                                    {item.timestamp.slice(11, 19)} UTC
+                                  </div>
+                                </td>
+
+                                <td className="py-3 px-4 whitespace-nowrap">
+                                  <div className="flex items-center gap-1.5">
+                                    {item.severity === 'ERROR' && (
+                                      <span className="px-2 py-0.5 rounded-full text-[10px] font-extrabold bg-red-500/20 text-red-300 border border-red-500/40">
+                                        🔴 ERROR
+                                      </span>
+                                    )}
+                                    {item.severity === 'WARN' && (
+                                      <span className="px-2 py-0.5 rounded-full text-[10px] font-bold bg-amber-500/20 text-amber-300 border border-amber-500/40">
+                                        🟡 WARN
+                                      </span>
+                                    )}
+                                    {item.severity === 'SUCCESS' && (
+                                      <span className="px-2 py-0.5 rounded-full text-[10px] font-bold bg-emerald-500/20 text-emerald-300 border border-emerald-500/40">
+                                        🟢 OK
+                                      </span>
+                                    )}
+                                    {item.severity === 'INFO' && (
+                                      <span className="px-2 py-0.5 rounded-full text-[10px] font-medium bg-sky-500/20 text-sky-300 border border-sky-500/30">
+                                        🔵 INFO
+                                      </span>
+                                    )}
+                                    <span className="text-[10px] text-slate-400 uppercase font-mono">
+                                      {item.category.replace('_', ' ')}
+                                    </span>
+                                  </div>
+                                </td>
+
+                                <td className="py-3 px-4 font-mono font-bold text-slate-200">
+                                  {item.action}
+                                </td>
+
+                                <td className="py-3 px-4">
+                                  <div className="font-semibold text-white">
+                                    {item.userName || 'System / Automated'}
+                                  </div>
+                                  {item.userId && (
+                                    <div className="font-mono text-[10px] text-slate-500 truncate max-w-[120px]">
+                                      {item.userId}
+                                    </div>
+                                  )}
+                                </td>
+
+                                <td className="py-3 px-4 text-slate-300 max-w-md">
+                                  <div className="line-clamp-2">{item.details}</div>
+                                </td>
+
+                                <td className="py-3 px-4 text-right whitespace-nowrap">
+                                  {item.metadata ? (
+                                    <button
+                                      type="button"
+                                      onClick={() =>
+                                        setExpandedLogId((prev) => (prev === item.id ? null : item.id))
+                                      }
+                                      className="px-2.5 py-1 rounded-lg bg-slate-800 hover:bg-slate-700 text-slate-300 text-[11px] font-medium cursor-pointer"
+                                    >
+                                      {isExpanded ? 'Hide Info' : 'Inspect'}
+                                    </button>
+                                  ) : (
+                                    <span className="text-slate-600">—</span>
+                                  )}
+                                </td>
+                              </tr>
+
+                              {isExpanded && item.metadata && (
+                                <tr className="bg-[#0B111E]/80 border-b border-slate-800">
+                                  <td colSpan={6} className="p-4">
+                                    <div className="space-y-2">
+                                      <div className="text-[11px] font-bold text-amber-400 uppercase">
+                                        Log Metadata &amp; Diagnostic Details:
+                                      </div>
+                                      <pre className="p-3 rounded-xl bg-[#070B14] border border-slate-800 text-[11px] font-mono text-emerald-300 whitespace-pre-wrap overflow-x-auto max-h-60">
+                                        {JSON.stringify(item.metadata, null, 2)}
+                                      </pre>
+                                    </div>
+                                  </td>
+                                </tr>
+                              )}
+                            </React.Fragment>
+                          );
+                        })
+                      )}
+                    </tbody>
+                  </table>
+                </div>
+              </div>
+            </section>
+          )}
         </main>
       </div>
 
@@ -2251,6 +2813,7 @@ export default function App() {
           { id: 'LOANS' as NavTab, label: 'Loans', icon: FileText },
           { id: 'BORROWERS' as NavTab, label: 'Referrals', icon: Users },
           { id: 'CALCULATOR' as NavTab, label: 'Calc', icon: Calculator },
+          { id: 'LOGS' as NavTab, label: 'Logs', icon: Activity },
           ...(currentUser.role === 'SUPER_ADMIN'
             ? [{ id: 'ADMIN_KEYS' as NavTab, label: 'Keys', icon: KeyRound }]
             : []),
