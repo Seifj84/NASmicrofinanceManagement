@@ -7,10 +7,11 @@
 
 ## 1. Getting Started (Sign In or Activate an Account)
 
-### A. Existing Users (Sign In)
+### A. Existing Users (Sign In & Password Recovery)
 1. Open the app on your **PC** or **Phone**.
 2. Enter your **Email or Phone Number** and **Password**.
 3. Click **Sign In**.
+4. **Forgot Your Password?** Click **"Forgot Password?"** under the password box. The app opens a security recovery helper that pre-composes an official Swahili request message with your phone/email to send to the NAS Super Administrator via **WhatsApp** or **Email** for fast verification and credential reset.
 
 ### B. New Users (Sign Up with a One-Time Activation Key)
 1. Click **Sign Up** on the login screen.
@@ -79,6 +80,10 @@ As **Super Admin (`admin@nas.co.tz`)**, you have **full visibility and control**
 2. **Admin Keys $\rightarrow$ Registered Users & Licensed Accounts Table:**
    - Shows every registered user on the platform, which Activation Key they claimed, how many **Loans** and **Clients** they have, their **Total Principal Offered (`TZS`)**, and **Total Collected (`TZS`)**.
    - Click **`View Ledger`** on any user row to immediately inspect their live portfolio.
+   - Click **`Reset Password` (🔑)** to open the 1-Click Password Recovery Drawer:
+     - Generate a new secure temporary password (e.g. `Nas#2026!7x9K`) or type a custom one.
+     - Saves the salted SHA-256 hash immediately.
+     - 1-Click **Copy Swahili WhatsApp message** or click **Send via WhatsApp** to dispatch credentials directly to the lender's phone.
    - Click **`Suspend` / `Activate`** to lock or unlock a user's login access, or **`Delete User`** to remove an account.
 
 ---

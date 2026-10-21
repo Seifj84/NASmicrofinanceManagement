@@ -50,6 +50,8 @@ import {
   EditLoanModal,
   InstallPwaModal,
   exportPortfolioToCSV,
+  AdminResetPasswordModal,
+  ForgotPasswordModal,
 } from './components/Stage2Modals';
 import {
   ActivationKey,
@@ -108,6 +110,8 @@ export default function App() {
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   const [deferredInstallPrompt, setDeferredInstallPrompt] = useState<any>(null);
   const [toastMessage, setToastMessage] = useState<string | null>(null);
+  const [resetPasswordUser, setResetPasswordUser] = useState<UserProfile | null>(null);
+  const [isForgotPasswordOpen, setIsForgotPasswordOpen] = useState(false);
 
   // Auth / Activation Screen state (when logged out)
   const [authMode, setAuthMode] = useState<'SIGN_IN' | 'ACTIVATE_KEY'>('SIGN_IN');
@@ -280,6 +284,11 @@ export default function App() {
   const currentUser = useMemo(
     () => appState.users.find((u) => u.id === currentUserId) || null,
     [appState.users, currentUserId]
+  );
+
+  const superAdminUser = useMemo(
+    () => appState.users.find((u) => u.role === 'SUPER_ADMIN') || null,
+    [appState.users]
   );
 
   // Tenant-isolated data for regular users; Super Admin can inspect SELF, ALL, or any specific userId
@@ -1403,9 +1412,18 @@ export default function App() {
                   />
                 </div>
                 <div>
-                  <label className="block text-xs font-semibold uppercase tracking-wider text-slate-400 mb-1.5">
-                    Password
-                  </label>
+                  <div className="flex items-center justify-between mb-1.5">
+                    <label className="block text-xs font-semibold uppercase tracking-wider text-slate-400">
+                      Password
+                    </label>
+                    <button
+                      type="button"
+                      onClick={() => setIsForgotPasswordOpen(true)}
+                      className="text-xs text-emerald-400 hover:text-emerald-300 font-medium cursor-pointer transition hover:underline"
+                    >
+                      Forgot Password?
+                    </button>
+                  </div>
                   <input
                     type="password"
                     required
@@ -2910,6 +2928,15 @@ export default function App() {
                               >
                                 View Ledger
                               </button>
+                              <button
+                                type="button"
+                                onClick={() => setResetPasswordUser(u)}
+                                className="px-2.5 py-1 rounded-lg bg-sky-500/20 hover:bg-sky-500/30 text-sky-300 text-xs font-semibold cursor-pointer transition inline-flex items-center gap-1"
+                                title={`Reset password for ${u.businessName}`}
+                              >
+                                <KeyRound className="w-3 h-3" />
+                                Reset Password
+                              </button>
                               {u.role !== 'SUPER_ADMIN' ? (
                                 <>
                                   <button
@@ -4059,6 +4086,59 @@ export default function App() {
             await deferredInstallPrompt.userChoice;
             setDeferredInstallPrompt(null);
             setIsInstallModalOpen(false);
+          }}
+        />
+      )}
+
+      {/* SUPER ADMIN PASSWORD RESET MODAL */}
+      {resetPasswordUser && currentUser && currentUser.role === 'SUPER_ADMIN' && (
+        <AdminResetPasswordModal
+          user={resetPasswordUser}
+          onClose={() => setResetPasswordUser(null)}
+          onResetPassword={(userId, newPlainPassword) => {
+            const target = appState.users.find((u) => u.id === userId);
+            if (!target) return;
+            const nextHash = hashPassword(newPlainPassword.trim());
+            const next = {
+              ...appState,
+              users: appState.users.map((item) =>
+                item.id === userId ? { ...item, passwordHash: nextHash } : item
+              ),
+            };
+            setAppState(next);
+            saveAppState(next);
+            logEvent({
+              category: 'AUTH_SECURITY',
+              severity: 'WARN',
+              userId: currentUser.id,
+              userName: currentUser.businessName,
+              action: 'PASSWORD_RESET_BY_ADMIN',
+              details: `Super Admin reset password for user "${target.businessName}" (${target.emailOrPhone}).`,
+              metadata: {
+                targetUserId: target.id,
+                targetUserEmailOrPhone: target.emailOrPhone,
+                targetUserName: target.businessName,
+              },
+            });
+            showToast(`Password successfully updated for ${target.businessName}`);
+          }}
+        />
+      )}
+
+      {/* FORGOT PASSWORD RECOVERY MODAL (PRE-LOGIN) */}
+      {isForgotPasswordOpen && (
+        <ForgotPasswordModal
+          initialIdentifier={signInIdentifier}
+          superAdminContact={superAdminUser?.emailOrPhone || 'admin@nas.co.tz'}
+          onClose={() => setIsForgotPasswordOpen(false)}
+          onRecoveryRequested={(recoveryId) => {
+            logEvent({
+              category: 'AUTH_SECURITY',
+              severity: 'INFO',
+              action: 'PASSWORD_RESET_REQUESTED',
+              details: `Password recovery assistance initiated via WhatsApp for identifier "${recoveryId}".`,
+              metadata: { identifier: recoveryId },
+            });
           }}
         />
       )}

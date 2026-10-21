@@ -454,3 +454,29 @@ export function evaluateReferralRisk(
     overdueClientNames,
   };
 }
+
+/**
+ * Generates a memorable, secure temporary password (e.g. Nas#2026!7x9K)
+ */
+export function generateTemporaryPassword(): string {
+  const chars = '23456789ABCDEFGHJKLMNPQRSTUVWXYZabcdefghijkmnpqrstuvwxyz';
+  let rand = '';
+  for (let i = 0; i < 4; i++) {
+    rand += chars.charAt(Math.floor(Math.random() * chars.length));
+  }
+  return `Nas#2026!${rand}`;
+}
+
+/**
+ * Normalizes Tanzanian telephone numbers for international WhatsApp click-to-chat (wa.me/255...)
+ */
+export function formatTanzanianPhoneForWhatsApp(input: string): string | null {
+  if (!input) return null;
+  const digits = input.replace(/[^0-9]/g, '');
+  if (digits.length < 9) return null;
+  if (digits.startsWith('255') && digits.length >= 12) return digits;
+  if (digits.startsWith('0') && digits.length === 10) return '255' + digits.slice(1);
+  if (digits.length === 9) return '255' + digits;
+  return digits;
+}
+

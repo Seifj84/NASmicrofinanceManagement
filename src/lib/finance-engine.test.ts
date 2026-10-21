@@ -8,6 +8,8 @@ import {
   hashPassword,
   verifyPassword,
   isPasswordHashed,
+  generateTemporaryPassword,
+  formatTanzanianPhoneForWhatsApp,
 } from './finance-engine.ts';
 
 console.log('Running NAS Microfinance (TZS) Financial Engine Tests...');
@@ -147,4 +149,16 @@ assert.equal(verifyPassword('MySecretPass2026!', hashed), true);
 assert.equal(verifyPassword('WrongPassword', hashed), false);
 assert.equal(hashPassword(hashed), hashed); // Idempotent when already hashed
 
-console.log('✓ All 8 TZS Financial, Referral & Security Engine test suites passed!');
+// 9. Temporary Password Generation & Phone Normalization for WhatsApp
+const tempPass = generateTemporaryPassword();
+assert.equal(tempPass.startsWith('Nas#2026!'), true);
+assert.equal(tempPass.length, 13);
+
+assert.equal(formatTanzanianPhoneForWhatsApp('+255 712 999 888'), '255712999888');
+assert.equal(formatTanzanianPhoneForWhatsApp('0754 111 222'), '255754111222');
+assert.equal(formatTanzanianPhoneForWhatsApp('255655123456'), '255655123456');
+assert.equal(formatTanzanianPhoneForWhatsApp('754111222'), '255754111222');
+assert.equal(formatTanzanianPhoneForWhatsApp('admin@nas.co.tz'), null);
+assert.equal(formatTanzanianPhoneForWhatsApp(''), null);
+
+console.log('✓ All 9 TZS Financial, Referral & Security Engine test suites passed!');

@@ -7,6 +7,14 @@ import {
   Smartphone,
   Monitor,
   AlertTriangle,
+  KeyRound,
+  Copy,
+  CheckCircle2,
+  MessageSquare,
+  Mail,
+  Eye,
+  EyeOff,
+  RefreshCw,
 } from 'lucide-react';
 import {
   Borrower,
@@ -17,6 +25,8 @@ import {
   addDaysToDate,
   formatTZS,
   hashPassword,
+  generateTemporaryPassword,
+  formatTanzanianPhoneForWhatsApp,
 } from '../lib/finance-engine';
 
 export function exportPortfolioToCSV(
@@ -694,3 +704,387 @@ export function InstallPwaModal({
     </div>
   );
 }
+
+// ---------------------------------------------------------------------------
+// ADMIN RESET PASSWORD MODAL (SUPER ADMIN DIRECT RECOVERY)
+// ---------------------------------------------------------------------------
+export function AdminResetPasswordModal({
+  user,
+  onClose,
+  onResetPassword,
+}: {
+  user: UserProfile;
+  onClose: () => void;
+  onResetPassword: (userId: string, newPlainPassword: string) => void;
+}) {
+  const [tempPassword, setTempPassword] = useState(() => generateTemporaryPassword());
+  const [showPassword, setShowPassword] = useState(true);
+  const [isSaved, setIsSaved] = useState(false);
+  const [copiedPass, setCopiedPass] = useState(false);
+  const [copiedMsg, setCopiedMsg] = useState(false);
+
+  const cleanPhone = formatTanzanianPhoneForWhatsApp(user.emailOrPhone);
+
+  const swahiliHandoverMessage = `Habari ${user.businessName},
+
+Nenosiri lako jipya la muda la kuingia kwenye mfumo wa NAS Microfinance limewekwa rasmi:
+🔑 Nenosiri Jipya: ${tempPassword}
+📧 Kitambulisho: ${user.emailOrPhone}
+
+Tafadhali ingia kwenye mfumo kupitia:
+https://na-smicrofinance-management.vercel.app/
+
+Ukishaingia, bonyeza "Account Security" kwenye kona ya juu ili kuweka nenosiri lako binafsi.
+— NAS Microfinance HQ Support`;
+
+  const handleCopyPassword = () => {
+    navigator.clipboard.writeText(tempPassword);
+    setCopiedPass(true);
+    setTimeout(() => setCopiedPass(false), 2000);
+  };
+
+  const handleCopyMessage = () => {
+    navigator.clipboard.writeText(swahiliHandoverMessage);
+    setCopiedMsg(true);
+    setTimeout(() => setCopiedMsg(false), 2000);
+  };
+
+  const handleOpenWhatsApp = () => {
+    const encoded = encodeURIComponent(swahiliHandoverMessage);
+    const url = cleanPhone
+      ? `https://wa.me/${cleanPhone}?text=${encoded}`
+      : `https://wa.me/?text=${encoded}`;
+    window.open(url, '_blank', 'noopener,noreferrer');
+  };
+
+  const handleSave = (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!tempPassword.trim() || tempPassword.trim().length < 6) {
+      alert('Password must be at least 6 characters long.');
+      return;
+    }
+    onResetPassword(user.id, tempPassword.trim());
+    setIsSaved(true);
+  };
+
+  return (
+    <div className="fixed inset-0 z-50 bg-black/75 backdrop-blur-xs flex items-center justify-center p-4 overflow-y-auto">
+      <div className="bg-[#131C2E] border border-slate-700 rounded-2xl max-w-lg w-full p-6 space-y-5 shadow-2xl">
+        <div className="flex items-center justify-between border-b border-slate-800 pb-3">
+          <h3 className="font-bold text-base text-white flex items-center gap-2">
+            <KeyRound className="w-5 h-5 text-sky-400" />
+            Super Admin: Reset Account Password
+          </h3>
+          <button
+            type="button"
+            onClick={onClose}
+            className="text-slate-400 hover:text-white transition cursor-pointer"
+          >
+            <X className="w-5 h-5" />
+          </button>
+        </div>
+
+        {/* User identification badge */}
+        <div className="p-3.5 rounded-xl bg-[#0B111E] border border-slate-800 flex items-center justify-between">
+          <div>
+            <div className="text-sm font-bold text-white">{user.businessName}</div>
+            <div className="text-xs font-mono text-slate-400">{user.emailOrPhone}</div>
+          </div>
+          <div className="text-right">
+            <span className="px-2 py-0.5 rounded text-[11px] font-bold bg-sky-500/20 text-sky-300 border border-sky-500/30">
+              {user.role}
+            </span>
+            <div className="text-[11px] text-slate-400 mt-1">Status: {user.accountStatus}</div>
+          </div>
+        </div>
+
+        {!isSaved ? (
+          <form onSubmit={handleSave} className="space-y-4">
+            <div>
+              <div className="flex items-center justify-between mb-1.5">
+                <label className="text-xs font-semibold uppercase text-slate-400">
+                  New Temporary Password
+                </label>
+                <button
+                  type="button"
+                  onClick={() => setTempPassword(generateTemporaryPassword())}
+                  className="text-xs text-amber-400 hover:text-amber-300 font-medium flex items-center gap-1 cursor-pointer"
+                >
+                  <RefreshCw className="w-3 h-3" /> Generate New
+                </button>
+              </div>
+
+              <div className="relative">
+                <input
+                  type={showPassword ? 'text' : 'password'}
+                  required
+                  value={tempPassword}
+                  onChange={(e) => setTempPassword(e.target.value)}
+                  className="w-full px-3.5 py-2.5 rounded-xl bg-[#0B111E] border border-slate-700 text-sm text-white font-mono focus:border-sky-500 focus:outline-none pr-10"
+                  placeholder="Minimum 6 characters"
+                />
+                <button
+                  type="button"
+                  onClick={() => setShowPassword(!showPassword)}
+                  className="absolute right-3 top-2.5 text-slate-400 hover:text-slate-200"
+                  title={showPassword ? 'Hide password' : 'Show password'}
+                >
+                  {showPassword ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
+                </button>
+              </div>
+
+              <p className="text-[11px] text-slate-500 mt-1.5 leading-relaxed">
+                Password will be cryptographically hashed (salted SHA-256) before saving. The previous password cannot be recovered.
+              </p>
+            </div>
+
+            <div className="p-3 rounded-xl bg-amber-500/10 border border-amber-500/30 text-amber-300 text-xs flex items-start gap-2">
+              <AlertTriangle className="w-4 h-4 shrink-0 mt-0.5 text-amber-400" />
+              <span>
+                Saving this will immediately overwrite the user's password. You can then copy or send the WhatsApp handover message to the lender.
+              </span>
+            </div>
+
+            <div className="flex items-center justify-end gap-3 pt-2 border-t border-slate-800">
+              <button
+                type="button"
+                onClick={onClose}
+                className="px-4 py-2 rounded-xl text-slate-400 hover:text-white text-xs font-semibold transition cursor-pointer"
+              >
+                Cancel
+              </button>
+              <button
+                type="submit"
+                disabled={tempPassword.trim().length < 6}
+                className="px-5 py-2.5 rounded-xl bg-sky-500 hover:bg-sky-400 disabled:opacity-50 text-slate-950 font-bold text-xs transition cursor-pointer flex items-center gap-1.5 shadow-lg shadow-sky-500/20"
+              >
+                <Save className="w-4 h-4" /> Save &amp; Apply Password
+              </button>
+            </div>
+          </form>
+        ) : (
+          <div className="space-y-4">
+            <div className="p-3.5 rounded-xl bg-emerald-500/15 border border-emerald-500/40 text-emerald-300 text-xs flex items-center gap-2">
+              <CheckCircle2 className="w-5 h-5 shrink-0 text-emerald-400" />
+              <span className="font-semibold">
+                Password successfully updated for {user.businessName}!
+              </span>
+            </div>
+
+            {/* Display Temporary Password box */}
+            <div className="p-4 rounded-xl bg-[#0B111E] border border-slate-700 space-y-2">
+              <div className="text-[11px] uppercase font-bold text-slate-400 tracking-wider">
+                Active Temporary Password
+              </div>
+              <div className="flex items-center justify-between gap-3">
+                <span className="text-lg font-mono font-bold text-emerald-400 tracking-wider select-all">
+                  {tempPassword}
+                </span>
+                <button
+                  type="button"
+                  onClick={handleCopyPassword}
+                  className="px-3 py-1.5 rounded-lg bg-slate-800 hover:bg-slate-700 text-slate-200 text-xs font-medium flex items-center gap-1.5 cursor-pointer transition border border-slate-700"
+                >
+                  <Copy className="w-3.5 h-3.5" />
+                  {copiedPass ? 'Copied!' : 'Copy'}
+                </button>
+              </div>
+            </div>
+
+            {/* Swahili WhatsApp Template Preview */}
+            <div className="space-y-1.5">
+              <div className="flex items-center justify-between">
+                <label className="text-xs font-semibold uppercase text-slate-400">
+                  Ujumbe wa WhatsApp (Swahili Handover Notice)
+                </label>
+                <button
+                  type="button"
+                  onClick={handleCopyMessage}
+                  className="text-xs text-sky-400 hover:text-sky-300 font-medium flex items-center gap-1 cursor-pointer"
+                >
+                  <Copy className="w-3 h-3" /> {copiedMsg ? 'Copied!' : 'Copy Message'}
+                </button>
+              </div>
+              <pre className="p-3 rounded-xl bg-[#0B111E] border border-slate-800 text-[11px] text-slate-300 font-sans whitespace-pre-wrap leading-relaxed max-h-40 overflow-y-auto">
+                {swahiliHandoverMessage}
+              </pre>
+            </div>
+
+            <div className="flex items-center justify-between gap-3 pt-3 border-t border-slate-800">
+              <button
+                type="button"
+                onClick={handleOpenWhatsApp}
+                className="flex-1 py-2.5 rounded-xl bg-emerald-500 hover:bg-emerald-400 text-slate-950 font-bold text-xs flex items-center justify-center gap-1.5 cursor-pointer shadow-lg shadow-emerald-500/10 transition"
+              >
+                <MessageSquare className="w-4 h-4" /> Send via WhatsApp
+              </button>
+              <button
+                type="button"
+                onClick={onClose}
+                className="px-5 py-2.5 rounded-xl bg-slate-800 hover:bg-slate-700 text-white text-xs font-semibold cursor-pointer transition"
+              >
+                Done
+              </button>
+            </div>
+          </div>
+        )}
+      </div>
+    </div>
+  );
+}
+
+// ---------------------------------------------------------------------------
+// FORGOT PASSWORD / CREDENTIAL RECOVERY HELPER MODAL
+// ---------------------------------------------------------------------------
+export function ForgotPasswordModal({
+  initialIdentifier,
+  superAdminContact = 'admin@nas.co.tz',
+  onClose,
+  onRecoveryRequested,
+}: {
+  initialIdentifier: string;
+  superAdminContact?: string;
+  onClose: () => void;
+  onRecoveryRequested?: (identifier: string) => void;
+}) {
+  const [identifier, setIdentifier] = useState(initialIdentifier || '');
+  const [copied, setCopied] = useState(false);
+
+  const cleanAdminPhone = formatTanzanianPhoneForWhatsApp(superAdminContact);
+
+  const recoveryMessage = `Habari Admin wa NAS Microfinance,
+
+Nimesahau nenosiri la akaunti yangu:
+👤 Kitambulisho changu: ${identifier.trim() || '[Weka Email au Namba ya Simu]'}
+
+Tafadhali naomba msaada wa kurejesha nenosiri langu ili niweze kuingia kwenye mfumo na kuendelea na usimamizi wa mikopo.
+Asante.`;
+
+  const handleCopy = () => {
+    navigator.clipboard.writeText(recoveryMessage);
+    setCopied(true);
+    setTimeout(() => setCopied(false), 2000);
+  };
+
+  const handleOpenWhatsApp = () => {
+    onRecoveryRequested?.(identifier.trim());
+    const encoded = encodeURIComponent(recoveryMessage);
+    const url = cleanAdminPhone
+      ? `https://wa.me/${cleanAdminPhone}?text=${encoded}`
+      : `https://wa.me/?text=${encoded}`;
+    window.open(url, '_blank', 'noopener,noreferrer');
+  };
+
+  const handleEmailAdmin = () => {
+    onRecoveryRequested?.(identifier.trim());
+    const subject = encodeURIComponent('NAS Microfinance - Password Reset Request');
+    const body = encodeURIComponent(recoveryMessage);
+    window.open(`mailto:${superAdminContact}?subject=${subject}&body=${body}`, '_blank');
+  };
+
+  return (
+    <div className="fixed inset-0 z-50 bg-black/75 backdrop-blur-xs flex items-center justify-center p-4 overflow-y-auto">
+      <div className="bg-[#131C2E] border border-slate-700 rounded-2xl max-w-lg w-full p-6 space-y-5 shadow-2xl">
+        <div className="flex items-center justify-between border-b border-slate-800 pb-3">
+          <h3 className="font-bold text-base text-white flex items-center gap-2">
+            <ShieldCheck className="w-5 h-5 text-emerald-400" />
+            Password Recovery / Urejeshaji wa Nenosiri
+          </h3>
+          <button
+            type="button"
+            onClick={onClose}
+            className="text-slate-400 hover:text-white transition cursor-pointer"
+          >
+            <X className="w-5 h-5" />
+          </button>
+        </div>
+
+        {/* Security protocol explanation */}
+        <div className="p-3.5 rounded-xl bg-amber-500/10 border border-amber-500/30 space-y-2 text-xs text-amber-200">
+          <div className="font-bold flex items-center gap-1.5 text-amber-300">
+            <AlertTriangle className="w-4 h-4 shrink-0" />
+            Ulinzi wa Taarifa za Mikopo (Security Protocol)
+          </div>
+          <p className="leading-relaxed">
+            Kwa usalama wa fedha na faragha ya wateja wako, nenosiri linarejeshwa kwa mawasiliano rasmi na uthibitisho kutoka kwa <strong>Admin Mkuu wa NAS Microfinance</strong>.
+          </p>
+          <p className="text-[11px] text-amber-300/80 italic leading-relaxed">
+            To safeguard portfolio records and client privacy, credentials can only be reset following direct verification by the NAS Microfinance Super Administrator.
+          </p>
+        </div>
+
+        {/* Input for user's email or phone */}
+        <div>
+          <label className="block text-xs font-semibold uppercase tracking-wider text-slate-300 mb-1.5">
+            Your Registered Email or Phone / Barua Pepe au Simu Yako
+          </label>
+          <input
+            type="text"
+            value={identifier}
+            onChange={(e) => setIdentifier(e.target.value)}
+            placeholder="e.g. 0712345678 or myname@business.co.tz"
+            className="w-full px-3.5 py-2.5 rounded-xl bg-[#0B111E] border border-slate-700 text-white text-sm focus:border-emerald-500 focus:outline-none"
+          />
+        </div>
+
+        {/* Pre-formatted recovery message preview */}
+        <div className="space-y-1.5">
+          <div className="flex items-center justify-between">
+            <span className="text-xs font-semibold uppercase text-slate-400">
+              Ujumbe wa Maombi (Pre-composed Request)
+            </span>
+            <button
+              type="button"
+              onClick={handleCopy}
+              className="text-xs text-emerald-400 hover:text-emerald-300 font-medium flex items-center gap-1 cursor-pointer"
+            >
+              <Copy className="w-3 h-3" /> {copied ? 'Copied!' : 'Copy Message'}
+            </button>
+          </div>
+          <pre className="p-3 rounded-xl bg-[#0B111E] border border-slate-800 text-[11px] text-slate-300 font-sans whitespace-pre-wrap leading-relaxed max-h-36 overflow-y-auto">
+            {recoveryMessage}
+          </pre>
+        </div>
+
+        {/* Direct Action triggers */}
+        <div className="space-y-2 pt-2">
+          <button
+            type="button"
+            onClick={handleOpenWhatsApp}
+            className="w-full py-3 rounded-xl bg-emerald-500 hover:bg-emerald-400 text-slate-950 font-bold text-xs flex items-center justify-center gap-2 cursor-pointer shadow-lg shadow-emerald-500/10 transition"
+          >
+            <MessageSquare className="w-4 h-4" /> Wasiliana na Admin kupitia WhatsApp
+          </button>
+
+          <div className="grid grid-cols-2 gap-2">
+            <button
+              type="button"
+              onClick={handleCopy}
+              className="py-2.5 px-3 rounded-xl bg-slate-800 hover:bg-slate-700 text-slate-200 text-xs font-semibold flex items-center justify-center gap-1.5 cursor-pointer border border-slate-700 transition"
+            >
+              <Copy className="w-3.5 h-3.5" /> {copied ? 'Copied!' : 'Nakili Ujumbe'}
+            </button>
+            <button
+              type="button"
+              onClick={handleEmailAdmin}
+              className="py-2.5 px-3 rounded-xl bg-slate-800 hover:bg-slate-700 text-slate-200 text-xs font-semibold flex items-center justify-center gap-1.5 cursor-pointer border border-slate-700 transition"
+            >
+              <Mail className="w-3.5 h-3.5" /> Tuma Barua Pepe
+            </button>
+          </div>
+        </div>
+
+        <div className="pt-2 border-t border-slate-800 text-center">
+          <button
+            type="button"
+            onClick={onClose}
+            className="text-xs text-slate-400 hover:text-white transition cursor-pointer"
+          >
+            ← Rudia Kuingia (Back to Sign In)
+          </button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
