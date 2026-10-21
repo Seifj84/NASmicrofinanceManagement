@@ -798,6 +798,7 @@ export default function App() {
     setFailedLoginCount(0);
     setLockoutUntilMs(0);
     setSignInPassword('');
+    setIsForgotPasswordOpen(false);
     setCurrentUserId(user.id);
     setActiveSessionUserId(user.id);
     logEvent({
@@ -1528,6 +1529,24 @@ export default function App() {
             )}
           </main>
         </div>
+
+        {/* FORGOT PASSWORD RECOVERY MODAL (PRE-LOGIN) */}
+        {isForgotPasswordOpen && (
+          <ForgotPasswordModal
+            initialIdentifier={signInIdentifier}
+            superAdminContact={superAdminUser?.emailOrPhone || 'admin@nas.co.tz'}
+            onClose={() => setIsForgotPasswordOpen(false)}
+            onRecoveryRequested={(recoveryId) => {
+              logEvent({
+                category: 'AUTH_SECURITY',
+                severity: 'INFO',
+                action: 'PASSWORD_RESET_REQUESTED',
+                details: `Password recovery assistance initiated via WhatsApp for identifier "${recoveryId}".`,
+                metadata: { identifier: recoveryId },
+              });
+            }}
+          />
+        )}
       </div>
     );
   }
@@ -4121,24 +4140,6 @@ export default function App() {
               },
             });
             showToast(`Password successfully updated for ${target.businessName}`);
-          }}
-        />
-      )}
-
-      {/* FORGOT PASSWORD RECOVERY MODAL (PRE-LOGIN) */}
-      {isForgotPasswordOpen && (
-        <ForgotPasswordModal
-          initialIdentifier={signInIdentifier}
-          superAdminContact={superAdminUser?.emailOrPhone || 'admin@nas.co.tz'}
-          onClose={() => setIsForgotPasswordOpen(false)}
-          onRecoveryRequested={(recoveryId) => {
-            logEvent({
-              category: 'AUTH_SECURITY',
-              severity: 'INFO',
-              action: 'PASSWORD_RESET_REQUESTED',
-              details: `Password recovery assistance initiated via WhatsApp for identifier "${recoveryId}".`,
-              metadata: { identifier: recoveryId },
-            });
           }}
         />
       )}
